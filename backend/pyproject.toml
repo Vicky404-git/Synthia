@@ -1,0 +1,17 @@
+[project]
+name = "synthia-backend"
+version = "0.1.0"
+description = "Synthia - voice-enabled cloud operations assistant (backend)"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 92
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

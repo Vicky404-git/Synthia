@@ -1,0 +1,46 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: synthia-backend:local
+    environment:
+      APP_ENV: development
+      PORT: "8000"
+      DEMO_MODE: "${DEMO_MODE:-true}"
+      CORS_ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:4173","http://localhost:8080"]'
+      API_AUTH_TOKEN: "${API_AUTH_TOKEN:-}"
+      LLM_PROVIDER: "${LLM_PROVIDER:-demo}"
+      LLM_API_KEY: "${LLM_API_KEY:-}"
+      LLM_MODEL: "${LLM_MODEL:-gpt-4o-mini}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-https://api.openai.com/v1}"
+      STT_PROVIDER: "${STT_PROVIDER:-none}"
+      STT_API_KEY: "${STT_API_KEY:-}"
+      AWS_ENABLED: "${AWS_ENABLED:-false}"
+      AWS_DEFAULT_REGION: "${AWS_DEFAULT_REGION:-us-east-1}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
+      DOCKER_ENABLED: "false"
+      AZURE_ENABLED: "${AZURE_ENABLED:-false}"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -fsS http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-http://localhost:8000}"
+        VITE_STT_PROVIDER: "${VITE_STT_PROVIDER:-browser}"
+    image: synthia-frontend:local
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
