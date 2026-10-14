@@ -24,8 +24,9 @@ architecture.
 
 ## 1. Project overview
 
-Synthia lets a user speak or type a request. Voice input is transcribed by the
-browser Web Speech API (or an optional hosted STT provider). The transcript is
+Synthia lets a user speak or type a request. Voice input is transcribed by a
+**local Faster-Whisper model on the backend** (CPU/INT8 by default), a hosted
+Whisper-compatible API, or the browser Web Speech API. The transcript is
 shown **exactly as recognised** so the user can debug misheard commands and
 resubmit an edited version. The backend interprets the request with an LLM
 (or a deterministic heuristic in demo mode), decides whether it is general
@@ -96,7 +97,7 @@ flowchart LR
     AWS --> AWSAPI[(AWS APIs)]
     DOC --> DD[(Local Docker daemon)]
 
-    API -->|optional| STT[Hosted STT provider]
+    API -->|STT| STT[Faster-Whisper - local CPU, or hosted Whisper]
     API --> RESULT[Structured result]
     RESULT --> FE
 ```
@@ -135,10 +136,13 @@ Request flow:
 1. The user taps the microphone (microphone permission is requested **only**
    after this interaction).
 2. A provider from the `SttProvider` interface is used:
-   - `browser` (**default**) — Web Speech API. Some browsers send audio to a
-     vendor service; the UI warns about this.
-   - `server` — records audio with `MediaRecorder` and posts it to
-     `POST /api/stt/transcribe`, which forwards it to a hosted STT provider.
+   - `server` (**default**) — records audio with `MediaRecorder` and posts it to
+     `POST /api/stt/transcribe`. The backend transcribes it with **local
+     Faster-Whisper** (the default `STT_PROVIDER=faster-whisper`) or an optional
+     hosted Whisper-compatible endpoint. Audio leaves the browser but, with
+     Faster-Whisper, stays on your backend host.
+   - `browser` — Web Speech API. Some browsers send audio to a vendor service and
+     it frequently fails with a network error; kept as an alternative.
 3. Statuses are distinct and never collapsed: `success`, `empty_transcript`,
    `permission_denied`, `unsupported_browser`, `network_failure`,
    `provider_error`, `timeout`.
@@ -235,8 +239,9 @@ flowchart LR
 | --- | --- | --- |
 | Demo mode, tool routing, history, tests | ✅ | — |
 | LLM answers | Demo only | Hosted LLM key for live answers |
+| Local Faster-Whisper STT | Verified end-to-end (CPU/INT8, incl. WebM) | `STT_PROVIDER=faster-whisper`; first run downloads the model |
 | Browser speech recognition | Implemented | A supported browser + HTTPS |
-| Hosted STT | Implemented | `STT_PROVIDER` + key |
+| Hosted STT | Implemented | `STT_PROVIDER=openai` + key |
 | AWS read-only ops | Mocks + unit tests | AWS credentials (read-only) |
 | Docker read-only ops | Mocks + unit tests | Local Docker daemon |
 | Azure | Interface only | Not implemented |
@@ -278,6 +283,56 @@ npm run dev                      # http://localhost:5173
 The Vite dev server proxies `/api`, `/health`, and `/ready` to
 `http://localhost:8000` (override with `VITE_DEV_BACKEND`).
 
+### Local Faster-Whisper speech-to-text (default)
+
+This is the recommended recogniser: it runs on the backend host with no API key
+and no GPU.
+
+```bash
+# backend/.env
+STT_PROVIDER=faster-whisper
+STT_MODEL=base          # tiny | base | small | medium | large-v3
+STT_DEVICE=cpu          # cpu by default; cuda works if you have CUDA
+STT_COMPUTE_TYPE=int8   # int8 for CPU; float16 for a GPU
+# STT_CACHE_DIR=/home/you/.cache/synthia   # model cache; kept out of the repo
+```
+
+- **First run needs internet.** The model is downloaded once, then cached and
+  reused for the process lifetime (it is never reloaded per request and is
+  **not** downloaded during a Docker build). If the download fails you get a
+  clear "could not load the local speech model" error.
+- **Model size vs. CPU/RAM (rough, INT8, 1–2 sentence clips on an i7-class CPU):**
+
+  | Model | Disk | RAM | Speed | Accuracy |
+  | --- | --- | --- | --- | --- |
+  | `tiny` | ~75 MB | ~0.5 GB | fastest (near real time) | basic |
+  | `base` | ~145 MB | ~0.7 GB | fast | good default |
+  | `small` | ~485 MB | ~1.2 GB | ~2–3× slower than base | better |
+
+  Start with `base`; drop to `tiny` if you need maximum speed, or move to
+  `small` if accuracy matters more than latency. 20 GB RAM is far more than
+  enough for any of these on CPU.
+- **Audio formats:** browser recordings are WebM/Opus; the decoder (PyAV/FFmpeg)
+  also handles WAV, MP3, OGG, FLAC and M4A.
+- **Authentication & limits:** the endpoint respects `API_AUTH_TOKEN` and
+  `STT_MAX_UPLOAD_BYTES` exactly like the hosted provider.
+- A failed local transcription **returns a real error** — Synthia never silently
+  falls back to browser recognition.
+
+**Docker Compose** passes the same settings and persists the model in a named
+volume, so it survives rebuilds:
+
+```bash
+STT_PROVIDER=faster-whisper STT_MODEL=base docker compose up --build
+# First transcription downloads the model into the `synthia-models` volume.
+```
+
+**Deploying to Vercel:** local Faster-Whisper runs on whatever **backend host**
+you deploy (e.g. Render), not on Vercel. Vercel only serves the static frontend.
+A public Vercel site does **not** automatically get your laptop's local model —
+point `VITE_API_BASE_URL` at a backend that has Faster-Whisper installed, and
+note that free hosts may not have the CPU/RAM or persistent disk for it.
+
 ## 15. Environment variables
 
 See `.env.example` (backend) and `frontend/.env.example`. Key variables:
@@ -290,7 +345,9 @@ See `.env.example` (backend) and `frontend/.env.example`. Key variables:
 | `ALLOW_MUTATING` | Opt in to mutating tools (default false) |
 | `RATE_LIMIT_PER_MINUTE` | Per-instance rate limit |
 | `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL` | LLM configuration |
-| `STT_PROVIDER`, `STT_API_KEY`, `STT_MODEL`, `STT_BASE_URL` | Server STT (optional) |
+| `STT_PROVIDER` (`none`\|`faster-whisper`\|`openai`) | Server STT selection (default `faster-whisper`) |
+| `STT_MODEL`, `STT_BASE_URL`, `STT_API_KEY` | STT model / hosted endpoint / key |
+| `STT_DEVICE`, `STT_COMPUTE_TYPE`, `STT_CACHE_DIR` | Local Faster-Whisper (CPU/INT8 default) |
 | `AWS_ENABLED`, `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | AWS |
 | `DOCKER_ENABLED`, `DOCKER_SOCKET` | Local Docker |
 | `AZURE_ENABLED`, `AZURE_SUBSCRIPTION_ID` | Azure (planned) |
@@ -335,12 +392,15 @@ cd backend && python debug.py --json   # machine-readable
 required check fails. It is the fastest way to confirm a fresh checkout or deploy
 is configured correctly.
 
-The backend suite (57 tests) covers health/readiness, validation, assistant
+The backend suite (78 tests) covers health/readiness, validation, assistant
 routing, tool routing, unknown tools, invalid arguments, missing credentials,
 provider errors, AWS/Docker adapters (mocked), transcription event creation and
-distinct failure statuses, and confirmation requirements for mutating
-operations. Frontend tests cover history persistence/filtering, status mapping,
-and transcript/error rendering.
+distinct failure statuses, confirmation requirements for mutating operations,
+and the local Faster-Whisper provider (selection, success + language, empty /
+oversized audio, load and inference errors, timeouts, caching, and that the
+hosted provider still works — all with the model mocked). Frontend tests cover
+history persistence/filtering, status mapping, STT provider selection, and
+transcript/error rendering.
 
 ## 18. Public demo URL
 
@@ -362,18 +422,23 @@ and transcript/error rendering.
 ### Why this is a Cloud Computing project, not only an ML project
 
 Synthia is not a locally trained model. It is a distributed system composed of
-a remotely deployed containerised API, a static frontend on a CDN, hosted LLM
-and speech APIs, cloud provider SDKs, API-based infrastructure operations,
-identity and permission boundaries, and an extensible multi-cloud adapter
-layer. The value is in the cloud integration, deployment, and safe API
-orchestration — the ML component is a replaceable, externally hosted service.
+a remotely deployed containerised API, a static frontend on a CDN, a replaceable
+LLM and a local (or hosted) speech-to-text service behind a stable interface,
+cloud provider SDKs, API-based infrastructure operations, identity and
+permission boundaries, and an extensible multi-cloud adapter layer. The value is
+in the cloud integration, deployment, and safe API orchestration — the ML
+components are swappable services, and speech-to-text can run entirely on the
+backend CPU with no external API.
 
 ### Final status snapshot
 
-- Backend: **57/57 tests pass**; runs locally and in Docker. `debug.py` reports
+- Backend: **78/78 tests pass**; runs locally and in Docker. `debug.py` reports
   all env vars/integrations and exits non-zero on misconfiguration.
-- Frontend: **typechecks, 10/10 tests pass, production build succeeds**.
+- Frontend: **typechecks, 13/13 tests pass, production build succeeds**.
+- Local Faster-Whisper STT verified end-to-end on CPU/INT8, including
+  browser-recorded WebM, with the Docker image building correctly.
 - Live cloud calls require credentials; demo mode works without any.
-- Remaining blocker for a public mobile demo: deploy the backend and set
-  `VITE_API_BASE_URL` + `CORS_ALLOWED_ORIGINS`, then open the HTTPS URL on a
-  phone (typed input works everywhere; browser microphone support varies).
+- Remaining blocker for a public mobile demo: deploy the backend (with
+  Faster-Whisper installed) and set `VITE_API_BASE_URL` + `CORS_ALLOWED_ORIGINS`,
+  then open the HTTPS URL on a phone. Local Faster-Whisper on your laptop does
+  **not** automatically become available to a Vercel deployment.

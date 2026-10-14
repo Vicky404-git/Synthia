@@ -9,15 +9,31 @@ from __future__ import annotations
 
 from ..config import get_settings
 from .base import STTProvider, STTResult
+from .faster_whisper import (
+    FasterWhisperSTTProvider,
+    reset_faster_whisper_cache,
+)
 from .none import DisabledSTTProvider
 from .openai_whisper import OpenAIWhisperSTTProvider
 
 
+def _provider_id(value: str) -> str:
+    return value.strip().lower().replace("_", "-")
+
+
 def get_stt_provider() -> STTProvider:
     settings = get_settings()
-    if settings.stt_provider == "openai" and settings.stt_api_key:
+    provider = _provider_id(settings.stt_provider)
+    if provider in {"faster-whisper", "local"}:
+        return FasterWhisperSTTProvider(settings)
+    if provider == "openai" and settings.stt_api_key:
         return OpenAIWhisperSTTProvider(settings)
     return DisabledSTTProvider()
 
 
-__all__ = ["STTProvider", "STTResult", "get_stt_provider"]
+__all__ = [
+    "STTProvider",
+    "STTResult",
+    "get_stt_provider",
+    "reset_faster_whisper_cache",
+]

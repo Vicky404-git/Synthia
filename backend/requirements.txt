@@ -6,3 +6,8 @@ httpx>=0.27,<1.0
 python-multipart>=0.0.9
 boto3>=1.34,<2.0
 docker>=7.1,<8.0
+faster-whisper>=1.1,<2.0
+# PyAV 17+ removed the `metadata_errors` argument that faster-whisper 1.2.x
+# still passes, which breaks audio decoding. Keep PyAV below 17 until a
+# faster-whisper release catches up.
+av>=11,<17

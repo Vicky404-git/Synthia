@@ -58,12 +58,29 @@ class Settings(BaseSettings):
     llm_max_tokens: int = Field(default=800, gt=0)
 
     # --- Speech to text (server-side, optional) ---
-    stt_provider: str = "none"  # none | openai
+    # "none" = disabled, "faster-whisper" = local CPU inference (default),
+    # "openai" = hosted OpenAI-compatible Whisper endpoint.
+    stt_provider: str = "faster-whisper"
     stt_api_key: str | None = None
-    stt_model: str = "whisper-1"
+    # Model name for the selected provider: a local size (tiny|base|small|
+    # medium|large-v3) for faster-whisper, or a hosted name (whisper-1).
+    stt_model: str = "base"
     stt_base_url: str = "https://api.openai.com/v1"
     stt_timeout_seconds: float = Field(default=60.0, gt=0)
     stt_max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
+
+    # --- Local Faster-Whisper (CPU, INT8 by default) ---
+    stt_device: str = "cpu"  # cpu | cuda | auto
+    stt_compute_type: str = "int8"  # int8 | int8_float16 | float16 | float32
+    stt_cpu_threads: int = Field(default=0, ge=0)  # 0 = let CTranslate2 decide
+    stt_num_workers: int = Field(default=1, ge=1)
+    stt_beam_size: int = Field(default=1, ge=1)
+    stt_vad_filter: bool = True
+    # Where model files are cached. Kept outside the repository by default.
+    stt_cache_dir: str | None = None
+    # Local inference (including the very first model download) can be slow on
+    # CPU, so it gets a more generous timeout than a hosted request.
+    stt_local_timeout_seconds: float = Field(default=300.0, gt=0)
 
     # --- AWS ---
     aws_enabled: bool = False
@@ -107,7 +124,10 @@ class Settings(BaseSettings):
 
     @property
     def stt_configured(self) -> bool:
-        return self.stt_provider != "none" and bool(self.stt_api_key)
+        provider = self.stt_provider.strip().lower().replace("_", "-")
+        if provider in {"faster-whisper", "local"}:
+            return True
+        return provider != "none" and bool(self.stt_api_key)
 
 
 @lru_cache

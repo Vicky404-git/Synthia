@@ -5,12 +5,14 @@ import type { ListenOptions, SttProvider, SttSession } from "./types";
  * Server-side speech-to-text provider.
  *
  * Records audio in the browser with MediaRecorder and posts it to the Synthia
- * backend, which forwards it to the configured hosted STT provider. Audio
- * leaves the device, so the UI must clearly indicate this.
+ * backend. The backend then transcribes it with whichever STT provider is
+ * configured — by default a local Faster-Whisper model running on the backend
+ * host, or an optional hosted service. Audio leaves the device, so the UI must
+ * clearly indicate this.
  */
 export class ServerSttProvider implements SttProvider {
   readonly id = "server";
-  readonly label = "Hosted STT (backend)";
+  readonly label = "Server STT (backend)";
   readonly online = true;
 
   get available(): boolean {

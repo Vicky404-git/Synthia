@@ -29,7 +29,8 @@ const SettingsContext = createContext<SettingsContextValue | null>(null);
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useLocalStorage<SettingsState>("synthia.settings.v1", {
     language: "en-US",
-    sttKind: (import.meta.env.VITE_STT_PROVIDER as SttKind) || "browser",
+    // Default to server STT (local Faster-Whisper) unless configured otherwise.
+    sttKind: (import.meta.env.VITE_STT_PROVIDER as SttKind) || "server",
   });
 
   const value: SettingsContextValue = {

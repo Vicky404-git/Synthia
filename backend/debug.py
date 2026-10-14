@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib
+import importlib.util
 import json
 import os
 import sys
@@ -212,6 +213,28 @@ def check_settings(report: Report) -> "object | None":
     # STT
     if settings.stt_provider == "none":
         report.add("STT", WARN, "none (browser Web Speech API / typed input only)")
+    elif settings.stt_provider in {"faster-whisper", "faster_whisper", "local"}:
+        installed = importlib.util.find_spec("faster_whisper") is not None
+        report.add(
+            "STT (local)",
+            OK if installed else FAIL,
+            "faster-whisper package installed" if installed
+            else "faster-whisper package is NOT installed",
+        )
+        report.add(
+            "STT model",
+            OK,
+            f"model={settings.stt_model} device={settings.stt_device} "
+            f"compute_type={settings.stt_compute_type}",
+        )
+        cache = settings.stt_cache_dir or "(default ~/.cache)"
+        report.add(
+            "STT cache",
+            OK,
+            f"{cache} — offline after first download"
+            if Path(cache).exists() or cache == "(default ~/.cache)"
+            else f"{cache} (will be created on first download)",
+        )
     elif settings.stt_configured:
         report.add(
             "STT",

@@ -1,7 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mapSpeechError } from "../stt/browser";
+import {
+  BrowserSttProvider,
+  createSttProvider,
+  ServerSttProvider,
+} from "../stt";
 import { STATUS_META } from "../history/status";
 import type { TranscriptionStatus } from "../api/types";
+
+describe("stt provider selection", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("defaults to server STT (local Faster-Whisper)", () => {
+    vi.stubEnv("VITE_STT_PROVIDER", "");
+    expect(createSttProvider()).toBeInstanceOf(ServerSttProvider);
+  });
+
+  it("honours an explicitly configured provider", () => {
+    vi.stubEnv("VITE_STT_PROVIDER", "browser");
+    expect(createSttProvider()).toBeInstanceOf(BrowserSttProvider);
+    vi.stubEnv("VITE_STT_PROVIDER", "server");
+    expect(createSttProvider()).toBeInstanceOf(ServerSttProvider);
+  });
+
+  it("respects an explicit user preference argument", () => {
+    expect(createSttProvider("browser")).toBeInstanceOf(BrowserSttProvider);
+    expect(createSttProvider("server")).toBeInstanceOf(ServerSttProvider);
+  });
+});
 
 describe("speech error mapping", () => {
   it("maps browser errors to distinct statuses", () => {

@@ -3,12 +3,17 @@ FROM python:3.13-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    STT_CACHE_DIR=/home/synthia/.cache/synthia
 
 WORKDIR /app
 
+# curl: container healthcheck. libgomp1: OpenMP runtime required by the
+# CTranslate2/ONNX Runtime wheels that back local Faster-Whisper. Audio is
+# decoded by PyAV, which ships its own FFmpeg libraries in the wheel.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
+    && apt-get install -y --no-install-recommends curl libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
@@ -16,8 +21,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 
+# Pre-create the model cache owned by the unprivileged user. The model itself is
+# NEVER downloaded at build time; it is fetched on first transcription.
 RUN useradd --create-home --uid 10001 synthia \
-    && chown -R synthia:synthia /app
+    && mkdir -p /home/synthia/.cache/synthia \
+    && chown -R synthia:synthia /app /home/synthia/.cache
 USER synthia
 
 EXPOSE 8000

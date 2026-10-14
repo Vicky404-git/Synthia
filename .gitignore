@@ -67,3 +67,18 @@ Thumbs.db
 .history/
 *.swp
 *~
+
+# --- Local ML models & caches (Faster-Whisper / Hugging Face) ---
+# Downloaded model weights can be hundreds of MB and are never committed.
+models/
+model_cache/
+.cache/
+huggingface/
+.cache/huggingface/
+
+# --- Local audio recordings (temporary STT uploads / scratch clips) ---
+recordings/
+*.wav
+*.webm
+*.ogg
+*.mp3

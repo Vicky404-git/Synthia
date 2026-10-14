@@ -366,13 +366,18 @@ export function Assistant() {
           <div className="alert info" style={{ marginBottom: 10 }}>
             <strong>listening…</strong>{" "}
             <span className="faint">
-              {livePartial || "speak now. audio may be sent to an online recogniser."}
+              {livePartial ||
+                (sttKind === "server"
+                  ? "speak now. audio is uploaded to the backend for transcription."
+                  : "speak now. the browser may send audio to a vendor service.")}
             </span>
           </div>
         )}
         {listenState === "processing" && (
           <div className="alert info" style={{ marginBottom: 10 }}>
-            processing audio…
+            {sttKind === "server"
+              ? "processing audio on the backend…"
+              : "processing audio…"}
           </div>
         )}
         {pendingTranscript && (

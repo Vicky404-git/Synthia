@@ -101,16 +101,18 @@ export function Settings() {
               value={sttKind}
               onChange={(event) => setSttKind(event.target.value as SttKind)}
             >
+              <option value="server">Server STT via backend (recommended)</option>
               <option value="browser">Browser Web Speech API</option>
-              <option value="server">Hosted STT via backend</option>
             </select>
           </div>
         </div>
         <div className="alert warning" style={{ marginTop: 10 }}>
-          Browser speech recognition availability varies. Some browsers send
-          audio to a vendor service even when using the Web Speech API. The
-          hosted option sends audio to the Synthia backend. Typed input is always
-          available as a fallback.
+          <strong>Server STT</strong> records audio in the browser and uploads it
+          to the Synthia backend, which transcribes it. With the default{" "}
+          <strong>local Faster-Whisper</strong> provider, the audio is processed
+          on the backend host only and is never sent to a third party. The
+          browser Web Speech API instead relies on the browser vendor and
+          frequently fails. Typed input is always available as a fallback.
         </div>
       </div>
 

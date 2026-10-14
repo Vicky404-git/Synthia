@@ -14,6 +14,7 @@ import httpx
 from ..config import Settings
 from ..errors import ProviderError, RateLimitedError
 from .base import STTProvider, STTResult
+from .faster_whisper import LOCAL_MODEL_NAMES
 
 
 class OpenAIWhisperSTTProvider(STTProvider):
@@ -23,7 +24,14 @@ class OpenAIWhisperSTTProvider(STTProvider):
         self._settings = settings
         self._base_url = settings.stt_base_url.rstrip("/")
         self._api_key = settings.stt_api_key or ""
-        self._model = settings.stt_model
+        # STT_MODEL now defaults to a *local* model name (base). If the hosted
+        # provider is selected without an explicit hosted model, fall back to
+        # OpenAI's whisper-1 so existing hosted deployments keep working.
+        self._model = (
+            "whisper-1"
+            if settings.stt_model in LOCAL_MODEL_NAMES
+            else settings.stt_model
+        )
         self._timeout = settings.stt_timeout_seconds
         self._max_bytes = settings.stt_max_upload_bytes
 

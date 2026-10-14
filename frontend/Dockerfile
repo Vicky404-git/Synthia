@@ -4,7 +4,7 @@ WORKDIR /app
 
 # The API base URL is baked in at build time (Vite requirement).
 ARG VITE_API_BASE_URL=""
-ARG VITE_STT_PROVIDER="browser"
+ARG VITE_STT_PROVIDER="server"
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
     VITE_STT_PROVIDER=$VITE_STT_PROVIDER
 

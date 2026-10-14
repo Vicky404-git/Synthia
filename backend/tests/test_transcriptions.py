@@ -93,7 +93,10 @@ def test_clear_transcriptions(client):
     assert client.get("/api/transcriptions").json()["count"] == 0
 
 
-def test_stt_unconfigured_reports_honestly(client):
+def test_stt_disabled_reports_honestly(make_client):
+    # Until this change the default was "none"; the default is now local
+    # faster-whisper, so explicitly disable STT to exercise this path.
+    client = make_client(STT_PROVIDER="none")
     response = client.post(
         "/api/stt/transcribe",
         files={"file": ("audio.webm", b"fake-bytes", "audio/webm")},
