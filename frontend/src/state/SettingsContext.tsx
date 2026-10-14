@@ -6,11 +6,18 @@ export type SttKind = "browser" | "server";
 export interface SettingsState {
   language: string;
   sttKind: SttKind;
+  /**
+   * Wake-word listening preference. Persisted like the other settings, but
+   * microphone permission is never assumed: every page load re-checks whether
+   * the browser can listen and the user can still disable it at any time.
+   */
+  wakeWordEnabled: boolean;
 }
 
 interface SettingsContextValue extends SettingsState {
   setLanguage: (language: string) => void;
   setSttKind: (kind: SttKind) => void;
+  setWakeWordEnabled: (enabled: boolean) => void;
 }
 
 export const LANGUAGES: { code: string; label: string }[] = [
@@ -31,12 +38,18 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     language: "en-US",
     // Default to server STT (local Faster-Whisper) unless configured otherwise.
     sttKind: (import.meta.env.VITE_STT_PROVIDER as SttKind) || "server",
+    // Wake-word mode is opt-in and OFF by default.
+    wakeWordEnabled: false,
   });
 
   const value: SettingsContextValue = {
-    ...state,
+    language: state.language,
+    sttKind: state.sttKind,
+    // Older saved settings predate this field; coerce so it is always a boolean.
+    wakeWordEnabled: Boolean(state.wakeWordEnabled),
     setLanguage: (language) => setState({ ...state, language }),
     setSttKind: (sttKind) => setState({ ...state, sttKind }),
+    setWakeWordEnabled: (wakeWordEnabled) => setState({ ...state, wakeWordEnabled }),
   };
 
   return (

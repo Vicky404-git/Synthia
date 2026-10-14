@@ -19,6 +19,7 @@ architecture.
 - **Backend:** Python + FastAPI
 - **Packaging:** Docker + Docker Compose
 - **CI:** GitHub Actions
+- **Design:** retro-blue operator console — see [`DESIGN.md`](DESIGN.md)
 
 ---
 
@@ -117,7 +118,8 @@ Request flow:
 - Transcription History: search, filters, detail, copy, retry, edit+resubmit,
   clear, empty state.
 - Cloud provider status and a live tool runner.
-- Settings: language, recogniser, privacy, demo indicator.
+- Optional **"Synthia" wake word** (off by default) that arms the recorder.
+- Settings: language, recogniser, wake word, privacy, demo indicator.
 - Mobile bottom navigation and responsive layout.
 - **Owns V1 history** in browser `localStorage`.
 
@@ -150,6 +152,34 @@ Request flow:
    reviews/edits and presses send — Synthia does not silently correct a misheard
    transcript.
 5. Typed input is always available and is labelled as `typed`, not as speech.
+
+### Optional wake word ("Synthia")
+
+Wake-word mode lets a user start recording by saying **"Synthia"** instead of
+tapping the microphone. It is deliberately **off by default** and is a
+convenience layered on top of the manual recorder, never a replacement:
+
+- **Keyword spotting only.** The phrase is detected with the browser Web Speech
+  API. Real transcription still goes through the configured STT provider
+  (server-side Faster-Whisper by default) — the wake word never sends a request
+  by itself.
+- **Privacy is explicit.** Many browsers (Chrome included) send microphone audio
+  to the browser vendor to recognise speech, so wake mode is **not an offline
+  feature**. This is disclosed in Settings and the wake status bar. Audio only
+  leaves the device while wake mode is armed or recording.
+- **The microphone is shared, not fought over.** Detection pauses while the
+  request recorder is active and is re-armed afterwards; at most one session
+  ever holds the mic. Hitting detect immediately releases the mic before
+  recording starts.
+- **You still review.** A detected wake word only starts listening — the
+  transcript is shown for review and is never auto-submitted.
+- **Easy to stop.** The wake status bar exposes a single "turn off" control that
+  disables detection and stops any recording. Turning the setting off also tears
+  the session down on unmount. Supported states are `disabled`, `unsupported`,
+  `waiting`, `detected`, `recording`, `processing` and `error`.
+- **Failure is handled.** Permission denial, unsupported browsers, network loss,
+  and empty speech each surface a clear status and fall back to the always-
+  available microphone button and typed input.
 
 ## 8. Transcription debugging & history
 
@@ -399,8 +429,10 @@ distinct failure statuses, confirmation requirements for mutating operations,
 and the local Faster-Whisper provider (selection, success + language, empty /
 oversized audio, load and inference errors, timeouts, caching, and that the
 hosted provider still works — all with the model mocked). Frontend tests cover
-history persistence/filtering, status mapping, STT provider selection, and
-transcript/error rendering.
+history persistence/filtering, status mapping, STT provider selection,
+transcript/error rendering, and wake-word phrase matching plus the wake
+lifecycle (opt-in, unsupported browser, detection, no duplicate sessions,
+permission denial, and mic release while recording).
 
 ## 18. Public demo URL
 
@@ -434,7 +466,7 @@ backend CPU with no external API.
 
 - Backend: **78/78 tests pass**; runs locally and in Docker. `debug.py` reports
   all env vars/integrations and exits non-zero on misconfiguration.
-- Frontend: **typechecks, 13/13 tests pass, production build succeeds**.
+- Frontend: **typechecks, 24/24 tests pass, production build succeeds**.
 - Local Faster-Whisper STT verified end-to-end on CPU/INT8, including
   browser-recorded WebM, with the Docker image building correctly.
 - Live cloud calls require credentials; demo mode works without any.

@@ -71,7 +71,3 @@ export const STATUS_META: Record<TranscriptionStatus, StatusMeta> = {
     failure: true,
   },
 };
-
-export function isFailure(status: TranscriptionStatus): boolean {
-  return STATUS_META[status]?.failure ?? true;
-}

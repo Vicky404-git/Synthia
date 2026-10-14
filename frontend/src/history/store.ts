@@ -45,7 +45,7 @@ export function loadHistory(): HistoryEvent[] {
   }
 }
 
-export function saveHistory(events: HistoryEvent[]): void {
+function saveHistory(events: HistoryEvent[]): void {
   if (typeof localStorage === "undefined") return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(events.slice(0, MAX_EVENTS)));

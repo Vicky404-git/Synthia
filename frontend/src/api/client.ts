@@ -7,8 +7,6 @@ import type {
   ReadyResponse,
   ToolExecuteResponse,
   ToolListResponse,
-  TranscriptionStatus,
-  InputSource,
 } from "./types";
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -131,23 +129,6 @@ export const api = {
     request<ToolExecuteResponse>("/api/tools/execute", {
       method: "POST",
       body: JSON.stringify({ name, arguments: args, confirmed }),
-    }),
-  recordTranscription: (payload: {
-    transcript: string;
-    provider: string;
-    language?: string | null;
-    source: InputSource;
-    status: TranscriptionStatus;
-    confidence?: number | null;
-    parsed_intent?: string | null;
-    tool_name?: string | null;
-    tool_status?: TranscriptionStatus | null;
-    error?: Record<string, unknown> | null;
-    duration_ms?: number | null;
-  }) =>
-    request<unknown>("/api/transcriptions", {
-      method: "POST",
-      body: JSON.stringify(payload),
     }),
 };
 

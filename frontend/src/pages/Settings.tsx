@@ -1,18 +1,29 @@
 import { API_BASE, hasApiToken, setApiToken } from "../api/client";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ProviderPill } from "../components/StatusPill";
+import { getSpeechRecognitionCtor } from "../stt/browser";
 import { LANGUAGES, useSettings, type SttKind } from "../state/SettingsContext";
 import { useBackend } from "../state/BackendContext";
 import { useHistory } from "../state/HistoryContext";
 import { useState } from "react";
 
 export function Settings() {
-  const { language, setLanguage, sttKind, setSttKind } = useSettings();
+  const {
+    language,
+    setLanguage,
+    sttKind,
+    setSttKind,
+    wakeWordEnabled,
+    setWakeWordEnabled,
+  } = useSettings();
   const { ready, providers, error } = useBackend();
   const { events, clear } = useHistory();
   const [confirmClear, setConfirmClear] = useState(false);
   const [tokenInput, setTokenInput] = useState("");
   const [tokenSet, setTokenSet] = useState(() => hasApiToken());
+
+  // Evaluated once per mount: whether this browser can even do keyword spotting.
+  const speechSupported = getSpeechRecognitionCtor() !== undefined;
 
   const llm = ready?.dependencies.find((dep) => dep.name === "llm");
   const stt = ready?.dependencies.find((dep) => dep.name === "stt");
@@ -113,6 +124,52 @@ export function Settings() {
           on the backend host only and is never sent to a third party. The
           browser Web Speech API instead relies on the browser vendor and
           frequently fails. Typed input is always available as a fallback.
+        </div>
+      </div>
+
+      <div className="panel">
+        <p className="panel-title">wake word (“synthia”)</p>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div style={{ maxWidth: 560 }}>
+            <div>
+              Say <strong>“Synthia”</strong> to arm the microphone while you are on
+              the Assistant page. The wake phrase only <em>starts</em> listening —
+              it never sends a request on its own; the transcript is still shown
+              for review before you send it.
+            </div>
+            <div className="faint" style={{ fontSize: 12, marginTop: 6 }}>
+              Off by default. Manual push-to-talk always stays available, even if
+              wake-word mode is unsupported or fails.
+            </div>
+          </div>
+          <button
+            type="button"
+            className={`btn ${wakeWordEnabled ? "btn-primary" : ""}`}
+            aria-pressed={wakeWordEnabled}
+            onClick={() => setWakeWordEnabled(!wakeWordEnabled)}
+          >
+            {wakeWordEnabled ? "on" : "off"}
+          </button>
+        </div>
+
+        {!speechSupported && (
+          <div className="alert warning" style={{ marginTop: 10 }}>
+            This browser does not expose the Web Speech API, so wake-word
+            detection is unavailable here. The microphone button and typed input
+            still work.
+          </div>
+        )}
+
+        <div className="alert warning" style={{ marginTop: 10 }}>
+          <strong>Privacy — this is not an offline feature.</strong> Wake-word
+          detection uses the browser Web Speech API purely for keyword spotting.
+          Many browsers (Chrome included) send microphone audio to the browser
+          vendor to recognise speech, so audio may leave your device while wake
+          mode is armed. Your actual request is then transcribed by the configured
+          server recogniser — with the default <strong>local Faster-Whisper</strong>{" "}
+          provider that audio stays on the backend host, but it is never sent to
+          your browser vendor for transcription. Turn wake mode off to stop all
+          listening immediately.
         </div>
       </div>
 

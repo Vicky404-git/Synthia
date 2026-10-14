@@ -5,7 +5,12 @@ import type {
   SttSession,
 } from "./types";
 
-function getCtor(): SpeechRecognitionCtor | undefined {
+/**
+ * Return the browser's Web Speech constructor, if it exposes one.
+ * Shared by the browser recogniser and the wake-word listener so both agree on
+ * availability and only ever talk to the same vendor API.
+ */
+export function getSpeechRecognitionCtor(): SpeechRecognitionCtor | undefined {
   if (typeof window === "undefined") return undefined;
   return window.SpeechRecognition ?? window.webkitSpeechRecognition;
 }
@@ -49,16 +54,17 @@ export function mapSpeechError(error: string): {
 /**
  * Browser speech recognition provider (Web Speech API).
  *
- * This is the primary V1 recogniser. It does not guarantee that audio stays on
- * the device: some browsers send audio to a vendor service, so the UI always
- * warns the user that online transcription may be used.
+ * This is the no-setup fallback recogniser; the default provider is server-side
+ * Faster-Whisper. It does not guarantee that audio stays on the device: some
+ * browsers send audio to a vendor service, so the UI always warns the user that
+ * online transcription may be used.
  */
 export class BrowserSttProvider implements SttProvider {
   readonly id = "browser-webspeech";
   readonly label = "Browser Web Speech API";
   readonly online = true;
 
-  private readonly ctor = getCtor();
+  private readonly ctor = getSpeechRecognitionCtor();
 
   get available(): boolean {
     return Boolean(this.ctor);

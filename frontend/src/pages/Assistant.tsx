@@ -5,7 +5,12 @@ import type { Mode, OperationClass, ToolCall, TranscriptionStatus } from "../api
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { MicButton } from "../components/MicButton";
 import { ToolCallView } from "../components/ToolCallView";
+import {
+  WakeStatusBar,
+  type WakeUiStatus,
+} from "../components/WakeStatusBar";
 import { createSttProvider, type ListenState, type SttResult, type SttSession } from "../stt";
+import { useWakeWord } from "../wake";
 import { useHistory } from "../state/HistoryContext";
 import { useSettings } from "../state/SettingsContext";
 import { newEventId, type HistoryEvent } from "../history/store";
@@ -43,7 +48,7 @@ function statusForError(code: string): TranscriptionStatus {
 }
 
 export function Assistant() {
-  const { language, sttKind } = useSettings();
+  const { language, sttKind, wakeWordEnabled, setWakeWordEnabled } = useSettings();
   const { add: addHistory, update: updateHistory } = useHistory();
   const location = useLocation();
 
@@ -67,6 +72,32 @@ export function Assistant() {
 
   const sessionRef = useRef<SttSession | null>(null);
   const provider = useMemo(() => createSttProvider(sttKind), [sttKind]);
+
+  // Wake-word listening is an optional convenience layered on top of the
+  // manual recorder. It is paused while the recorder owns the microphone (so
+  // the two never compete) and re-armed once recording finishes.
+  const recording = listenState !== "idle";
+  const wake = useWakeWord({
+    enabled: wakeWordEnabled,
+    paused: recording,
+    language,
+    onWake: startVoice,
+  });
+
+  // Single combined status for the wake/record lifecycle.
+  const wakeUi: WakeUiStatus = !wakeWordEnabled
+    ? "disabled"
+    : wake.status === "unsupported"
+      ? "unsupported"
+      : wake.status === "error"
+        ? "error"
+        : listenState === "processing"
+          ? "processing"
+          : listenState === "listening" || listenState === "requesting"
+            ? "recording"
+            : wake.status === "detected"
+              ? "detected"
+              : "waiting";
 
   // Prefill from the History page ("send to assistant" / retry).
   useEffect(() => {
@@ -123,6 +154,13 @@ export function Assistant() {
   function stopVoice() {
     sessionRef.current?.stop();
     setListenState("idle");
+  }
+
+  // Turning wake mode off also stops any recording that is currently running,
+  // so the microphone is never left live after the user opts out.
+  function disableWakeWord() {
+    setWakeWordEnabled(false);
+    stopVoice();
   }
 
   function handleSpeechResult(result: SttResult) {
@@ -223,7 +261,7 @@ export function Assistant() {
             return;
           }
           finalizeAssistant(assistantId, {
-            text: `⚠ ${error.message}`,
+            text: error.message,
             error: { code: error.code, message: error.message },
             pending: false,
           });
@@ -361,7 +399,17 @@ export function Assistant() {
         ))}
       </div>
 
-      <div className="panel" style={{ marginTop: 16, position: "sticky", bottom: 8 }}>
+      <div className="panel console-panel" style={{ marginTop: 16, position: "sticky", bottom: 8 }}>
+        {wakeWordEnabled && (
+          <WakeStatusBar
+            status={wakeUi}
+            message={
+              wake.error ??
+              (wake.status === "unsupported" ? wake.unsupportedReason : undefined)
+            }
+            onDisable={disableWakeWord}
+          />
+        )}
         {listening && (
           <div className="alert info" style={{ marginBottom: 10 }}>
             <strong>listening…</strong>{" "}
