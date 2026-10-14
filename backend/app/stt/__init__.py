@@ -1,8 +1,10 @@
 """Server-side speech-to-text provider abstraction.
 
-V1 uses the browser Web Speech API as the primary recogniser. This package
-exists so a hosted STT service (or a future custom model) can be plugged in
-without touching the API layer.
+The default recogniser is local Faster-Whisper (``STT_PROVIDER=faster-whisper``),
+with hosted Whisper-compatible endpoints and a disabled provider as alternatives.
+The browser Web Speech API remains a frontend-only fallback. Keeping the
+recogniser behind this package means the API layer never needs to change when
+the provider changes.
 """
 
 from __future__ import annotations

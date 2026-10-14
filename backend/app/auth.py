@@ -29,10 +29,6 @@ async def require_auth(authorization: str | None = Header(default=None)) -> None
         raise UnauthorizedError("Invalid bearer token.")
 
 
-def auth_enabled() -> bool:
-    return bool(get_settings().api_auth_token)
-
-
 def ensure_authorized(authorization: str | None) -> None:
     """Raise only when auth is enabled and the bearer token is missing/invalid.
 
