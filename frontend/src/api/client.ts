@@ -10,6 +10,7 @@ import type {
   ToolExecuteResponse,
   ToolListResponse,
 } from "./types";
+import { byokHeaders } from "./byok";
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
@@ -121,6 +122,9 @@ export const api = {
   chat: (payload: ChatPayload) =>
     request<ChatResponse>("/api/chat", {
       method: "POST",
+      // BYOK headers are attached to chat requests only, never to other
+      // endpoints (providers, tools, lex, stt, health, ...).
+      headers: byokHeaders(),
       body: JSON.stringify(payload),
     }),
   executeTool: (
@@ -174,7 +178,11 @@ export async function streamChat(
   try {
     response = await fetch(`${API_BASE}/api/chat/stream`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(),
+        ...byokHeaders(),
+      },
       body: JSON.stringify(payload),
     });
   } catch {

@@ -1,4 +1,14 @@
 import { API_BASE, hasApiToken, setApiToken } from "../api/client";
+import {
+  LLM_PROVIDERS,
+  clearProfiles,
+  getActiveProfileSummary,
+  getProfileForProvider,
+  saveProfile,
+  validateProfile,
+  type LlmProfile,
+  type LlmProfileSummary,
+} from "../api/byok";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ProviderPill } from "../components/StatusPill";
 import { getSpeechRecognitionCtor } from "../stt/browser";
@@ -22,8 +32,68 @@ export function Settings() {
   const [tokenInput, setTokenInput] = useState("");
   const [tokenSet, setTokenSet] = useState(() => hasApiToken());
 
+  // BYOK: the selected provider's saved profile, if any. The key itself is
+  // never read back into the UI — only whether one is saved for this provider.
+  const [byokProvider, setByokProvider] = useState(LLM_PROVIDERS[0].id);
+  const [byokModel, setByokModel] = useState(
+    () => getProfileForProvider(LLM_PROVIDERS[0].id)?.model ?? "",
+  );
+  const [byokKey, setByokKey] = useState("");
+  const [byokError, setByokError] = useState<string | null>(null);
+  const [byokSaved, setByokSaved] = useState(
+    () => getProfileForProvider(LLM_PROVIDERS[0].id) !== null,
+  );
+  // Display metadata only — the API key is never held in component state.
+  const [activeProfile, setActiveProfile] = useState<LlmProfileSummary | null>(
+    () => getActiveProfileSummary(),
+  );
+
   // Evaluated once per mount: whether this browser can even do keyword spotting.
   const speechSupported = getSpeechRecognitionCtor() !== undefined;
+
+  function selectByokProvider(id: string) {
+    setByokProvider(id);
+    setByokKey("");
+    setByokError(null);
+    const saved = getProfileForProvider(id);
+    setByokModel(saved?.model ?? "");
+    setByokSaved(Boolean(saved));
+  }
+
+  function handleSaveByok() {
+    // Reuse this provider's already-saved key when the field is left blank.
+    const existing = getProfileForProvider(byokProvider);
+    const apiKey = byokKey.trim() || existing?.apiKey || "";
+    const profile: LlmProfile = { provider: byokProvider, model: byokModel, apiKey };
+    const error = validateProfile(profile);
+    if (error) {
+      setByokError(error);
+      return;
+    }
+    try {
+      saveProfile(profile);
+    } catch (err) {
+      // Persistence failed: keep the typed key so the user can retry, and never
+      // report the profile as saved/active.
+      setByokError(
+        err instanceof Error ? err.message : "Could not save this profile.",
+      );
+      return;
+    }
+    setByokKey("");
+    setByokError(null);
+    setByokSaved(true);
+    setActiveProfile(getActiveProfileSummary());
+  }
+
+  function handleClearByok() {
+    clearProfiles();
+    setByokKey("");
+    setByokModel("");
+    setByokSaved(false);
+    setByokError(null);
+    setActiveProfile(null);
+  }
 
   const llm = ready?.dependencies.find((dep) => dep.name === "llm");
   const stt = ready?.dependencies.find((dep) => dep.name === "stt");
@@ -99,6 +169,100 @@ export function Settings() {
       </div>
 
       <div className="panel">
+        <p className="panel-title">ai provider — bring your own key</p>
+        <p className="faint" style={{ fontSize: 12.5 }}>
+          Use your own AI provider for chat. Choose a provider, enter a model ID
+          and your API key. The key is kept only in this browser tab's session
+          storage (never in localStorage or the build) and is sent with chat
+          requests to the Synthia backend, which forwards the request to the
+          provider you selected.
+        </p>
+        <div className="alert warning" style={{ marginTop: 10 }}>
+          <strong>Privacy &amp; billing.</strong> Your prompts and chat history
+          pass through the Synthia backend to the selected provider, where that
+          provider's data, retention, and billing policies apply. Usage is billed
+          by the provider against your own key and may incur charges. Synthia does
+          not verify the key here — the provider may reject it on your next chat
+          request.
+        </div>
+
+        <div className="grid grid-2" style={{ marginTop: 10 }}>
+          <div>
+            <label className="field-label" htmlFor="byok-provider">
+              provider
+            </label>
+            <select
+              id="byok-provider"
+              className="select"
+              value={byokProvider}
+              onChange={(event) => selectByokProvider(event.target.value)}
+            >
+              {LLM_PROVIDERS.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="field-label" htmlFor="byok-model">
+              model id
+            </label>
+            <input
+              id="byok-model"
+              className="input"
+              type="text"
+              placeholder="e.g. gpt-4o-mini"
+              value={byokModel}
+              onChange={(event) => setByokModel(event.target.value)}
+            />
+          </div>
+        </div>
+
+        <div style={{ marginTop: 10 }}>
+          <label className="field-label" htmlFor="byok-key">
+            api key
+          </label>
+          <input
+            id="byok-key"
+            className="input"
+            style={{ maxWidth: 420 }}
+            type="password"
+            autoComplete="off"
+            placeholder={byokSaved ? "key saved for this session" : "paste API key…"}
+            value={byokKey}
+            onChange={(event) => setByokKey(event.target.value)}
+          />
+        </div>
+
+        {byokError && (
+          <div className="alert error" style={{ marginTop: 10 }}>
+            {byokError}
+          </div>
+        )}
+
+        <div className="row" style={{ marginTop: 10 }}>
+          <button type="button" className="btn" onClick={handleSaveByok}>
+            save &amp; use
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={handleClearByok}>
+            clear
+          </button>
+          <span className={`pill ${activeProfile ? "success" : "neutral"}`}>
+            {activeProfile
+              ? `active: ${activeProfile.provider} · ${activeProfile.model}`
+              : "using default provider"}
+          </span>
+        </div>
+        <p className="faint" style={{ fontSize: 11.5, marginTop: 10 }}>
+          Switching provider keeps each provider's own saved key; it never reuses
+          another provider's key. The saved key is never displayed again. Clearing
+          returns chat to the server's default/demo provider and does not affect
+          your API access token.
+        </p>
+      </div>
+
+      <div className="panel">
         <p className="panel-title">speech recognition</p>
         <div className="grid grid-2">
           <div>
@@ -155,7 +319,10 @@ export function Settings() {
             </div>
             <div className="faint" style={{ fontSize: 12, marginTop: 6 }}>
               Off by default. Manual push-to-talk always stays available, even if
-              wake-word mode is unsupported or fails.
+              wake-word mode is unsupported or fails. If the browser speech service
+              drops the connection, the listener re-arms automatically with a
+              bounded backoff (and waits for the network while offline); only a
+              denied microphone or a missing device stops it.
             </div>
           </div>
           <button

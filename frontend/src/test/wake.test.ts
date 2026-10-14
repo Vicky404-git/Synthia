@@ -63,8 +63,37 @@ function removeFakes() {
 afterEach(() => {
   FakeRecognition.instances = [];
   removeFakes();
+  restoreOnline();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
+
+/** Force `navigator.onLine` to a value and later restore it. */
+function setOnline(value: boolean) {
+  Object.defineProperty(window.navigator, "onLine", {
+    configurable: true,
+    value,
+  });
+}
+
+function restoreOnline() {
+  delete (window.navigator as unknown as { onLine?: unknown }).onLine;
+}
+
+/**
+ * Reproduce the real browser sequence for a failed session: the engine fires
+ * `onstart` as soon as it connects, then immediately fails with a network error.
+ * The retry counter must survive `onstart` so the backoff grows.
+ */
+function failLatestNetwork() {
+  const instance = FakeRecognition.instances[FakeRecognition.instances.length - 1];
+  act(() => {
+    instance.onstart?.();
+    instance.onerror?.({ error: "network" });
+    // The browser follows an error with an `end`; it must not reset the backoff.
+    instance.onend?.();
+  });
+}
 
 describe("wake-phrase matching", () => {
   it("normalises case and punctuation", () => {
@@ -202,5 +231,164 @@ describe("useWakeWord", () => {
 
     // The detector session is torn down (aborted) so it cannot hold the mic.
     await waitFor(() => expect(FakeRecognition.instances[0].aborted).toBe(true));
+  });
+});
+
+describe("useWakeWord recovery", () => {
+  it("recovers from a transient network error with a bounded backoff", () => {
+    vi.useFakeTimers();
+    installFake(FakeRecognition);
+    const onWake = vi.fn();
+    const { result } = renderHook(() =>
+      useWakeWord({ enabled: true, paused: false, language: "en-US", onWake }),
+    );
+    expect(result.current.status).toBe("waiting");
+    expect(FakeRecognition.instances).toHaveLength(1);
+
+    act(() => {
+      FakeRecognition.instances[0].onerror?.({ error: "network" });
+    });
+    expect(result.current.status).toBe("recovering");
+    expect(result.current.error).toMatch(/network/i);
+
+    // The first backoff is one second: no new session before then.
+    act(() => {
+      vi.advanceTimersByTime(999);
+    });
+    expect(FakeRecognition.instances).toHaveLength(1);
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(FakeRecognition.instances).toHaveLength(2);
+    expect(result.current.status).toBe("waiting");
+  });
+
+  it("grows the retry delay across repeated connect-then-network failures", () => {
+    vi.useFakeTimers();
+    installFake(FakeRecognition);
+    renderHook(() =>
+      useWakeWord({ enabled: true, paused: false, language: "en-US", onWake: vi.fn() }),
+    );
+    expect(FakeRecognition.instances).toHaveLength(1);
+
+    // 1s, 2s, 4s, 8s — each session connects (onstart) then fails (network),
+    // and the delay must keep growing rather than resetting to 1s.
+    const delays = [1000, 2000, 4000, 8000];
+    failLatestNetwork();
+    for (const delay of delays) {
+      const before = FakeRecognition.instances.length;
+      act(() => {
+        vi.advanceTimersByTime(delay - 1);
+      });
+      expect(FakeRecognition.instances).toHaveLength(before);
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(FakeRecognition.instances).toHaveLength(before + 1);
+      failLatestNetwork();
+    }
+  });
+
+  it("caps the retry delay at 30 seconds", () => {
+    vi.useFakeTimers();
+    installFake(FakeRecognition);
+    renderHook(() =>
+      useWakeWord({ enabled: true, paused: false, language: "en-US", onWake: vi.fn() }),
+    );
+
+    // Drive the backoff past the cap: 1s, 2s, 4s, 8s, 16s, then it saturates.
+    const growing = [1000, 2000, 4000, 8000, 16000];
+    failLatestNetwork();
+    for (const delay of growing) {
+      act(() => {
+        vi.advanceTimersByTime(delay);
+      });
+      failLatestNetwork();
+    }
+
+    // The next delay is already the 30s cap (not 32s): 29999ms is not enough.
+    const before = FakeRecognition.instances.length;
+    act(() => {
+      vi.advanceTimersByTime(30000 - 1);
+    });
+    expect(FakeRecognition.instances).toHaveLength(before);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(FakeRecognition.instances).toHaveLength(before + 1);
+  });
+
+  it("does not retry after a fatal permission denial", () => {
+    vi.useFakeTimers();
+    installFake(FakeRecognition);
+    const { result } = renderHook(() =>
+      useWakeWord({ enabled: true, paused: false, language: "en-US", onWake: vi.fn() }),
+    );
+
+    act(() => {
+      FakeRecognition.instances[0].onerror?.({ error: "not-allowed" });
+    });
+    expect(result.current.status).toBe("error");
+
+    act(() => {
+      vi.advanceTimersByTime(120000);
+    });
+    expect(FakeRecognition.instances).toHaveLength(1);
+  });
+
+  it("waits for the network to return while offline, then re-arms", () => {
+    vi.useFakeTimers();
+    installFake(FakeRecognition);
+    setOnline(false);
+    const { result } = renderHook(() =>
+      useWakeWord({ enabled: true, paused: false, language: "en-US", onWake: vi.fn() }),
+    );
+
+    act(() => {
+      FakeRecognition.instances[0].onerror?.({ error: "network" });
+    });
+    expect(result.current.status).toBe("recovering");
+    expect(result.current.error).toMatch(/network|paused/i);
+
+    // While offline the detector must not spin up a new session.
+    act(() => {
+      vi.advanceTimersByTime(120000);
+    });
+    expect(FakeRecognition.instances).toHaveLength(1);
+
+    setOnline(true);
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    act(() => {
+      vi.advanceTimersByTime(400);
+    });
+    expect(FakeRecognition.instances).toHaveLength(2);
+    expect(result.current.status).toBe("waiting");
+  });
+
+  it("tears down timers and the online listener on unmount", () => {
+    vi.useFakeTimers();
+    installFake(FakeRecognition);
+    setOnline(false);
+    const { unmount } = renderHook(() =>
+      useWakeWord({ enabled: true, paused: false, language: "en-US", onWake: vi.fn() }),
+    );
+
+    act(() => {
+      FakeRecognition.instances[0].onerror?.({ error: "network" });
+    });
+    unmount();
+
+    setOnline(true);
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    act(() => {
+      vi.advanceTimersByTime(120000);
+    });
+    expect(FakeRecognition.instances).toHaveLength(1);
+    expect(FakeRecognition.instances[0].aborted).toBe(true);
   });
 });

@@ -9,6 +9,7 @@ export type WakeUiStatus =
   | "disabled"
   | "unsupported"
   | "waiting"
+  | "recovering"
   | "detected"
   | "recording"
   | "processing"
@@ -18,6 +19,7 @@ const LABELS: Record<WakeUiStatus, string> = {
   disabled: "wake word off",
   unsupported: "wake word unavailable in this browser",
   waiting: "armed — say “synthia”",
+  recovering: "reconnecting — wake word will re-arm",
   detected: "wake word detected",
   recording: "microphone live — recording your request",
   processing: "microphone released — transcribing",

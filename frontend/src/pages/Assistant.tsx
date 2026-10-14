@@ -97,7 +97,9 @@ export function Assistant() {
             ? "recording"
             : wake.status === "detected"
               ? "detected"
-              : "waiting";
+              : wake.status === "recovering"
+                ? "recovering"
+                : "waiting";
 
   // Prefill from the History page ("send to assistant" / retry).
   useEffect(() => {
