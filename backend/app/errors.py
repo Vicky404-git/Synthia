@@ -77,6 +77,16 @@ class ProviderNotConfiguredError(SynthiaError):
     status_code = 400
 
 
+class InvalidLLMConfigError(SynthiaError):
+    """A request-scoped (BYOK) LLM configuration is missing or invalid.
+
+    Details never include the API key itself.
+    """
+
+    code = "invalid_llm_config"
+    status_code = 400
+
+
 class ProviderError(SynthiaError):
     code = "provider_error"
     status_code = 502

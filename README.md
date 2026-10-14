@@ -183,11 +183,20 @@ convenience layered on top of the manual recorder, never a replacement:
   transcript is shown for review and is never auto-submitted.
 - **Easy to stop.** The wake status bar exposes a single "turn off" control that
   disables detection and stops any recording. Turning the setting off also tears
-  the session down on unmount. Supported states are `disabled`, `unsupported`,
-  `waiting`, `detected`, `recording`, `processing` and `error`.
-- **Failure is handled.** Permission denial, unsupported browsers, network loss,
-  and empty speech each surface a clear status and fall back to the always-
-  available microphone button and typed input.
+  the session down on unmount.
+- **States.** `disabled`, `unsupported`, `waiting`, `recovering`, `detected`,
+  `recording`, `processing`, `error`.
+- **Failure is handled by cause.** Permission denial and a missing microphone are
+  fatal and ask the user to act. Transient failures (network loss, engine errors,
+  a failed start) are **not** fatal: the listener re-arms with a bounded
+  exponential backoff (`1s → 2s → 4s → …`, capped at `30s`) instead of stopping
+  permanently, and while the device is offline it waits for the browser's
+  `online` event before retrying — never a tight restart loop. Empty speech
+  quietly restarts. Manual push-to-talk and typed input always remain available.
+- **No local model.** There is no bundled offline keyword-spotting model; the
+  detection service is whatever the browser's Web Speech API uses, which can be
+  remote. This is why the privacy note above matters and why manual input is the
+  guaranteed path.
 
 ## 8. Transcription debugging & history
 
@@ -214,6 +223,72 @@ headers, and sensitive cloud responses are **not** stored.
   demo mode.
 - The LLM never executes anything. It cannot claim an action succeeded; only
   the backend's tool execution result is trustworthy.
+
+### Bring your own key (BYOK) AI providers
+
+Besides the server-configured LLM, a user can point Synthia at **their own** AI
+provider and API key from the Settings page. The profile is used for **both**
+normal and streaming chat.
+
+- **Supported providers.** All expose an OpenAI-compatible `/chat/completions`
+  endpoint, so one implementation covers every entry. The server owns this
+  registry; the browser only ever selects an id, never a URL.
+
+  | ID | Provider | Get a key |
+  | --- | --- | --- |
+  | `openai` | OpenAI | https://platform.openai.com/api-keys |
+  | `gemini` | Google Gemini | https://aistudio.google.com/app/apikey |
+  | `groq` | Groq | https://console.groq.com/keys |
+  | `openrouter` | OpenRouter | https://openrouter.ai/keys |
+  | `deepseek` | DeepSeek | https://platform.deepseek.com/api_keys |
+  | `together` | Together AI | https://api.together.xyz/settings/api-keys |
+  | `mistral` | Mistral AI | https://console.mistral.ai/api-keys |
+  | `xai` | xAI | https://console.x.ai |
+
+  You supply the **model ID** yourself (for example `gpt-4o-mini`,
+  `llama-3.1-8b-instant`, `deepseek-chat`); Synthia ships no model catalogue and
+  does not imply every model is available on every key.
+
+- **Where to configure.** Settings → *ai provider — bring your own key*: pick a
+  provider, enter a model ID and an API key, then **save & use**. The active
+  profile is shown; **clear** returns chat to the server's default/demo provider
+  (and never touches your Synthia API access token).
+
+- **Flow.** `browser sessionStorage → chat request headers → request-scoped
+  FastAPI provider → selected upstream provider`. The three headers are sent
+  **only** to `POST /api/chat` and `POST /api/chat/stream`:
+
+  | Header | Value |
+  | --- | --- |
+  | `X-Synthia-LLM-Provider` | one of the ids above |
+  | `X-Synthia-LLM-Model` | your model ID (≤ 200 chars) |
+  | `X-Synthia-LLM-API-Key` | your key (≤ 4096 chars) |
+
+- **Storage.** The profile lives in **`sessionStorage`** — this browser tab only,
+  never `localStorage`, never the build, never a URL. Each provider keeps its own
+  saved key, so switching provider never silently reuses another provider's key.
+  Closing the tab clears everything.
+
+- **Secret handling.** The backend uses the key only to build a request-scoped
+  provider object: it is never persisted, logged, returned, or placed in error
+  details, and upstream error bodies are redacted before reaching the client. The
+  key still **passes through** the Synthia backend in memory to the provider you
+  chose — it is not sent directly from the browser, which is disclosed in the UI.
+
+- **Invalid profiles are rejected.** A partial, unknown, empty, oversized, or
+  duplicate-header profile returns a structured `invalid_llm_config` error.
+  Synthia never silently falls back to the default provider when you asked for a
+  specific one.
+
+- **Scope.** A BYOK key selects the **AI model only**. It grants no cloud,
+  Docker, or infrastructure access and does not bypass the tool registry,
+  read-only defaults, mutation confirmation, authorization, or rate limiting.
+
+- **Privacy & billing.** Prompts and chat history pass through the Synthia
+  backend to the selected provider, where that provider's data/retention policies
+  apply. Usage is billed by the provider against your key and may cost money.
+  Synthia does not verify the key upfront; the provider may reject it on the next
+  chat request.
 
 ## 10. Cloud tool router & provider adapters
 
@@ -332,6 +407,11 @@ flowchart LR
 - Structured error responses that never leak stack traces or secrets.
 - Simple in-memory rate limiting; request size/length limits.
 - No secrets in the frontend; only connection *status* is exposed.
+- Request-scoped BYOK keys are used only to build a per-request chat provider:
+  never persisted, logged, returned, or reflected in errors (upstream error
+  bodies are redacted), stored only in `sessionStorage`, and never granted
+  infrastructure access. The provider registry is server-owned, so a caller
+  cannot point Synthia at an arbitrary upstream URL.
 
 **Verified vs. requires credentials**
 
@@ -343,6 +423,7 @@ flowchart LR
 | Browser speech recognition | Implemented | A supported browser + HTTPS |
 | Hosted STT | Implemented | `STT_PROVIDER=openai` + key |
 | AWS read-only ops | Mocks + unit tests | AWS credentials (read-only) |
+| BYOK chat (8 providers) | Verified end-to-end with mocked upstreams; session-only storage | Your own provider API key |
 | Lex voice commands | Simulated provider verified; AWS adapter mocked (no real AWS) | A Lex V2 bot + alias + Lambda, AWS credentials, `LEX_*` config |
 | Docker read-only ops | Mocks + unit tests | Local Docker daemon |
 | Azure | Interface only | Not implemented |
@@ -356,6 +437,11 @@ flowchart LR
 - Rate limiting is per-instance, not distributed.
 - Browser speech recognition behaviour varies across browsers and is not
   promised to work identically on all mobile browsers.
+- Wake-word keyword spotting uses the browser Web Speech API with **no bundled
+  offline model**; it needs a browser that exposes the API and may rely on a
+  remote vendor service, so it is not guaranteed to work offline.
+- BYOK keys are held in per-tab `sessionStorage`, so they are not shared across
+  tabs and are lost when the tab closes; there is no server-side vault.
 
 ## 15. Installation & local execution
 
@@ -460,6 +546,11 @@ The API token is **not** a build-time variable: it is entered at runtime in the
 Settings page and stored in `sessionStorage` only, so it is never bundled into
 the JavaScript.
 
+BYOK is **not** an environment variable either. The three headers
+`X-Synthia-LLM-Provider`, `X-Synthia-LLM-Model`, and `X-Synthia-LLM-API-Key`
+are set in the browser Settings page and sent at runtime **only** to the chat
+endpoints; the server resolves them per request and never writes them anywhere.
+
 Never commit a real `.env`, key, or token.
 
 ## 17. Cloud provider configuration
@@ -501,24 +592,41 @@ cd backend && python debug.py --json   # machine-readable
 required check fails. It is the fastest way to confirm a fresh checkout or deploy
 is configured correctly.
 
-The backend suite (99 tests) covers health/readiness, validation, assistant
+The backend suite (119 tests) covers health/readiness, validation, assistant
 routing, tool routing, unknown tools, invalid arguments, missing credentials,
 provider errors, AWS/Docker adapters (mocked), transcription event creation and
 distinct failure statuses, confirmation requirements for mutating operations,
 and the local Faster-Whisper provider (selection, success + language, empty /
 oversized audio, load and inference errors, timeouts, caching, and that the
-hosted provider still works — all with the model mocked). It also covers the
-optional Lex command path entirely with mocks and **no real AWS credentials**:
-request construction, response parsing, intent/slot allowlist validation,
-missing configuration, AWS error mapping, WAV-header stripping and content-type
+hosted provider still works — all with the model mocked). BYOK coverage mocks the
+upstream HTTP entirely and uses a sentinel key: all eight providers map to the
+expected curated URLs, URL construction preserves path components, valid profiles
+drive both normal and streaming chat, no/partial/invalid/oversized/duplicate
+headers behave correctly, arbitrary upstream URLs are impossible, the reported
+provider id matches the selection, concurrent requests with different
+provider/model/key stay isolated — including two simultaneous HTTP `/api/chat`
+calls whose upstream URLs, models and Authorization headers are each captured
+and correlated — the key never appears in responses (including redacted upstream
+errors), and BYOK cannot bypass infrastructure authorization (**no real provider
+or key is ever used**). It also covers the optional Lex
+command path entirely with mocks and **no real AWS credentials**: request
+construction, response parsing, intent/slot allowlist validation, missing
+configuration, AWS error mapping, WAV-header stripping and content-type
 sanitising, distinct session ids, the simulated provider, and the FastAPI routes
 (`/api/lex/status`, `/api/lex/command`, `/api/lex/voice`) including provider
-fallback and readiness reporting. Frontend tests cover history
+fallback and readiness reporting. Frontend tests (51) cover history
 persistence/filtering, status mapping, STT provider selection, transcript/error
-rendering, the Commands page (simulated status, send, result rendering), and
-wake-word phrase matching plus the wake lifecycle (opt-in, unsupported browser,
-detection, no duplicate sessions, permission denial, and mic release while
-recording).
+rendering, the Commands page (simulated status, send, result rendering), BYOK
+(provider list, validation, `sessionStorage`-only storage, per-provider keys,
+active/clear behaviour, the display-only active summary that omits the key,
+a storage-write failure that must not be reported as saved and must not clear the
+typed input, and that the three headers are attached to normal + streaming chat
+and the non-streaming fallback but **not** to unrelated endpoints), and wake-word
+phrase matching plus the wake lifecycle (opt-in, unsupported browser, detection,
+no duplicate sessions, permission denial, mic release while recording, network
+recovery with a bounded backoff that grows `1s → 2s → 4s → …` and caps at `30s`
+across repeated connect-then-fail cycles, offline waiting/online re-arm, and
+cleanup on unmount).
 
 ## 19. Public demo URL
 
@@ -550,9 +658,12 @@ backend CPU with no external API.
 
 ### Final status snapshot
 
-- Backend: **99/99 tests pass**; runs locally and in Docker. `debug.py` reports
+- Backend: **119/119 tests pass**; runs locally and in Docker. `debug.py` reports
   all env vars/integrations and exits non-zero on misconfiguration.
-- Frontend: **typechecks, 26/26 tests pass, production build succeeds**.
+- Frontend: **typechecks, 51/51 tests pass, production build succeeds**.
+- BYOK for eight providers is implemented for normal and streaming chat with
+  request-scoped resolution, session-only browser storage, and no secret
+  persistence or leakage (verified with mocked upstreams).
 - Optional AWS Lex V2 command mode is implemented behind a replaceable provider
   and verified with mocked tests only — no AWS bot, alias, or Lambda is created
   or verified, and live use requires your own credentials and resources.

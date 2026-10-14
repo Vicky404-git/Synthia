@@ -666,6 +666,15 @@ kbd {
   background: var(--amber);
 }
 
+/* Recovering = transient failure; distinctive amber pulse while re-arming. */
+.wake-bar.recovering {
+  border-left-color: var(--amber);
+}
+.wake-bar.recovering .wake-light {
+  background: var(--amber);
+  animation: live 1.2s steps(2, end) infinite;
+}
+
 @keyframes live {
   0%,
   49% {

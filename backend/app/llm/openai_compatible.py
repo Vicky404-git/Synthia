@@ -14,21 +14,38 @@ import httpx
 from ..config import Settings
 from ..errors import ProviderError, RateLimitedError
 from .base import LLMProvider, LLMResult
+from .providers import chat_completions_url
 
 
 class OpenAICompatibleLLMProvider(LLMProvider):
-    id = "openai"
     supports_structured = True
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        provider_id: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+        api_key: str | None = None,
+        timeout: float | None = None,
+        max_tokens: int | None = None,
+    ) -> None:
         self._settings = settings
-        self._base_url = settings.llm_base_url.rstrip("/")
-        self._api_key = settings.llm_api_key or ""
-        self._timeout = settings.llm_timeout_seconds
+        # The reportable provider id reflects what actually served the request,
+        # not a hardcoded "openai" (BYOK requests select any registered id).
+        self.id = provider_id or settings.llm_provider or "openai"
+        self._base_url = base_url or settings.llm_base_url
+        self._model = model or settings.llm_model
+        self._api_key = (api_key if api_key is not None else settings.llm_api_key) or ""
+        self._timeout = timeout if timeout is not None else settings.llm_timeout_seconds
+        self._max_tokens = (
+            max_tokens if max_tokens is not None else settings.llm_max_tokens
+        )
 
     @property
     def model(self) -> str:
-        return self._settings.llm_model
+        return self._model
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -55,7 +72,8 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             details={
                 "provider": self.id,
                 "upstream_status": response.status_code,
-                "upstream_message": _safe_text(response),
+                # Redact defensively in case an upstream echoes credentials.
+                "upstream_message": redact(_safe_text(response), self._api_key),
             },
         )
 
@@ -70,12 +88,12 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": max_tokens or self._settings.llm_max_tokens,
+            "max_tokens": max_tokens or self._max_tokens,
         }
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 response = await client.post(
-                    f"{self._base_url}/chat/completions",
+                    chat_completions_url(self._base_url),
                     headers=self._headers(),
                     json=payload,
                 )
@@ -115,14 +133,14 @@ class OpenAICompatibleLLMProvider(LLMProvider):
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": max_tokens or self._settings.llm_max_tokens,
+            "max_tokens": max_tokens or self._max_tokens,
             "stream": True,
         }
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 async with client.stream(
                     "POST",
-                    f"{self._base_url}/chat/completions",
+                    chat_completions_url(self._base_url),
                     headers=self._headers(),
                     json=payload,
                 ) as response:
@@ -157,3 +175,10 @@ def _safe_text(response: httpx.Response, limit: int = 300) -> str:
         return response.text[:limit]
     except Exception:  # pragma: no cover - defensive
         return ""
+
+
+def redact(text: str, secret: str) -> str:
+    """Replace any occurrence of ``secret`` so it can never surface in errors."""
+    if secret and secret in text:
+        return text.replace(secret, "***")
+    return text

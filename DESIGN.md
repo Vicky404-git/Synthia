@@ -114,8 +114,8 @@ Motion is minimal and functional:
   1.8px stroke. **No emoji** — they render inconsistently and read as casual.
 - **The wake status bar** (`.wake-bar`) is the single surface for microphone
   state. Its left border and light colour track the lifecycle: blue = armed and
-  waiting, cyan = detected/recording, amber = processing or unsupported, red =
-  error.
+  waiting, cyan = detected/recording, amber = processing, unsupported, or
+  recovering (transient failure re-arming), red = error.
 - **Voice Commands** reuses the existing primitives (panels, pills, transcript
   strip, composer, microphone button) rather than introducing a second
   interface. Live vs. simulated is never colour-only: results carry a text

@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from ..auth import client_key, ensure_authorized, get_rate_limiter
 from ..config import get_settings
 from ..errors import SynthiaError, ValidationError
-from ..llm import get_llm_provider
+from ..llm import resolve_llm_provider
 from ..routing import decide, execute_decision
 from ..routing.interpreter import answer_messages
 from ..schemas import ChatRequest, ChatResponse, OperationClass
@@ -38,7 +38,9 @@ async def chat(req: ChatRequest, request: Request) -> ChatResponse:
     _validate_length(req.message)
 
     registry = get_tool_registry()
-    llm = get_llm_provider()
+    # Request-scoped: BYOK headers (if present) select the provider for this
+    # request only; otherwise the server-configured default is used.
+    llm = resolve_llm_provider(request)
     history = [message.model_dump() for message in req.history]
 
     decision = await decide(
@@ -81,11 +83,13 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
     get_rate_limiter().check(client_key(request))
     _validate_length(req.message)
     registry = get_tool_registry()
-    llm = get_llm_provider()
     history = [message.model_dump() for message in req.history]
 
     async def event_stream():
         try:
+            # Resolve inside the stream so an invalid BYOK profile is reported
+            # as a structured SSE error rather than a broken connection.
+            llm = resolve_llm_provider(request)
             decision = await decide(
                 message=req.message,
                 history=history,
