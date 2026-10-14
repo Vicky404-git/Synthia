@@ -89,6 +89,20 @@ class Settings(BaseSettings):
     aws_secret_access_key: str | None = None
     aws_session_token: str | None = None
 
+    # --- AWS Lex V2 (optional voice-command intent recogniser) ---
+    # When disabled or incomplete, Synthia falls back to a clearly labelled
+    # simulated command provider so the flow stays demonstrable offline.
+    lex_enabled: bool = False
+    lex_bot_id: str | None = None
+    lex_bot_alias_id: str = "TSTALIASID"
+    lex_locale_id: str = "en_US"
+    # Prefix for server-generated session ids. Each browser session supplies its
+    # own id; the server never reuses a hardcoded global session.
+    lex_session_id_prefix: str = "synthia"
+    # Use Lex RecognizeUtterance (audio) when the caller provides 16 kHz mono
+    # PCM. Off by default so the portable path is STT -> RecognizeText.
+    lex_use_recognize_utterance: bool = False
+
     # --- Docker (local) ---
     docker_enabled: bool = False
     docker_socket: str = "unix:///var/run/docker.sock"
@@ -128,6 +142,17 @@ class Settings(BaseSettings):
         if provider in {"faster-whisper", "local"}:
             return True
         return provider != "none" and bool(self.stt_api_key)
+
+    @property
+    def lex_configured(self) -> bool:
+        """True when Lex is enabled and has the minimum identifying config.
+
+        Credentials are intentionally not checked here: boto3 resolves them
+        from the standard chain (IAM role, shared config, or environment).
+        """
+        return self.lex_enabled and bool(self.lex_bot_id) and bool(
+            self.lex_bot_alias_id
+        )
 
 
 @lru_cache

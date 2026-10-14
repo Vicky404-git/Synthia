@@ -264,6 +264,27 @@ def check_settings(report: Report) -> "object | None":
             else "not in env — relying on the AWS credential chain",
         )
 
+    # Lex (optional voice-command intent recognition)
+    if not settings.lex_enabled:
+        report.add(
+            "LEX_ENABLED",
+            WARN,
+            "false (clearly-labelled simulated command provider is used)",
+        )
+    elif settings.lex_configured:
+        report.add(
+            "Lex",
+            OK,
+            f"bot={settings.lex_bot_id} alias={settings.lex_bot_alias_id} "
+            f"locale={settings.lex_locale_id} region={settings.aws_default_region}",
+        )
+    else:
+        report.add(
+            "Lex",
+            FAIL,
+            "LEX_ENABLED=true but LEX_BOT_ID / LEX_BOT_ALIAS_ID is not set",
+        )
+
     # Docker
     report.add(
         "DOCKER_ENABLED",

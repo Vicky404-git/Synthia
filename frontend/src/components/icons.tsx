@@ -77,6 +77,15 @@ export function SlidersIcon(props: IconProps) {
   );
 }
 
+export function CommandIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="m6 8 3 4-3 4" />
+      <path d="M12 16h6" />
+    </Svg>
+  );
+}
+
 export function MicIcon(props: IconProps) {
   return (
     <Svg {...props}>

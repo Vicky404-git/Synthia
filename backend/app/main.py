@@ -18,7 +18,7 @@ from .errors import (
     synthia_error_handler,
     unhandled_error_handler,
 )
-from .routers import chat, providers, system, tools, transcriptions
+from .routers import chat, lex, providers, system, tools, transcriptions
 
 logging.basicConfig(
     level=logging.INFO,
@@ -77,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(providers.router)
     app.include_router(tools.router)
     app.include_router(chat.router)
+    app.include_router(lex.router)
     app.include_router(transcriptions.router)
 
     @app.get("/", tags=["system"])

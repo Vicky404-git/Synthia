@@ -116,6 +116,11 @@ Motion is minimal and functional:
   state. Its left border and light colour track the lifecycle: blue = armed and
   waiting, cyan = detected/recording, amber = processing or unsupported, red =
   error.
+- **Voice Commands** reuses the existing primitives (panels, pills, transcript
+  strip, composer, microphone button) rather than introducing a second
+  interface. Live vs. simulated is never colour-only: results carry a text
+  badge (`live AWS` / `simulated`) and a simulated result repeats `DEMO DATA`
+  in an info alert.
 
 ## Accessibility
 

@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from .. import __version__
 from ..config import get_settings
+from ..lex import get_lex_provider
 from ..llm import get_llm_provider
 from ..providers import get_provider_registry
 from ..schemas import DependencyStatus, HealthResponse, ReadyResponse
@@ -25,6 +26,7 @@ async def ready() -> ReadyResponse:
     settings = get_settings()
     llm = get_llm_provider()
     stt = get_stt_provider()
+    lex_provider = get_lex_provider()
     registry = get_provider_registry()
 
     dependencies = [
@@ -45,6 +47,11 @@ async def ready() -> ReadyResponse:
                 if stt.available
                 else "browser Web Speech API / typed input only"
             ),
+        ),
+        DependencyStatus(
+            name="lex",
+            ready=lex_provider.available or lex_provider.health().simulated,
+            detail=lex_provider.health().detail,
         ),
     ]
     for provider_id, health in registry.all_health():

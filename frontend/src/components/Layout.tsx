@@ -4,6 +4,7 @@ import { useBackend } from "../state/BackendContext";
 import { useHistory } from "../state/HistoryContext";
 import {
   CloudIcon,
+  CommandIcon,
   ConsoleIcon,
   HistoryIcon,
   SlidersIcon,
@@ -11,6 +12,7 @@ import {
 
 const NAV = [
   { to: "/", label: "Assistant", Icon: ConsoleIcon, end: true },
+  { to: "/commands", label: "Commands", Icon: CommandIcon, end: false },
   { to: "/history", label: "History", Icon: HistoryIcon, end: false },
   { to: "/resources", label: "Cloud", Icon: CloudIcon, end: false },
   { to: "/settings", label: "Settings", Icon: SlidersIcon, end: false },

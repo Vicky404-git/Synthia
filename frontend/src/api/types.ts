@@ -86,6 +86,32 @@ export interface ToolExecuteResponse {
   message: string;
 }
 
+export type LexCommandMode = "live" | "simulated" | "disabled";
+
+export interface LexCommandResponse {
+  id: string;
+  timestamp: string;
+  transcript: string;
+  intent: string;
+  slots: Record<string, string>;
+  fulfillment_message: string;
+  mode: LexCommandMode;
+  provider: string;
+  session_id: string;
+  latency_ms: number;
+  warnings: string[];
+}
+
+export interface LexStatusResponse {
+  enabled: boolean;
+  configured: boolean;
+  available: boolean;
+  mode: LexCommandMode;
+  provider: string;
+  detail: string;
+  setup_hint: string | null;
+}
+
 export interface DependencyStatus {
   name: string;
   ready: boolean;

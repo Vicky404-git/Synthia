@@ -27,6 +27,7 @@ export function Settings() {
 
   const llm = ready?.dependencies.find((dep) => dep.name === "llm");
   const stt = ready?.dependencies.find((dep) => dep.name === "stt");
+  const lex = ready?.dependencies.find((dep) => dep.name === "lex");
 
   return (
     <div>
@@ -65,7 +66,22 @@ export function Settings() {
           <dd>{llm?.detail ?? "—"}</dd>
           <dt>speech-to-text</dt>
           <dd>{stt?.detail ?? "—"}</dd>
+          <dt>command recognition</dt>
+          <dd>{lex?.detail ?? "—"}</dd>
         </dl>
+      </div>
+
+      <div className="panel">
+        <p className="panel-title">voice commands</p>
+        <p className="faint" style={{ fontSize: 12.5 }}>
+          The <strong>Commands</strong> page uses a replaceable intent
+          recogniser. With no AWS Lex configuration it runs a clearly labelled
+          simulated provider, so the flow works offline. Configure{" "}
+          <code>LEX_ENABLED</code>, <code>LEX_BOT_ID</code>, and{" "}
+          <code>LEX_BOT_ALIAS_ID</code> on the backend to use a real AWS Lex V2
+          bot; results are then marked <strong>live AWS</strong>. Synthia sends
+          only text or a transcript — never raw audio stored on the server.
+        </p>
       </div>
 
       <div className="panel">

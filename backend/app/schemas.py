@@ -143,6 +143,55 @@ class ProviderListResponse(BaseModel):
     providers: list[ProviderInfo]
 
 
+# --- Lex command mode (optional, replaceable) -----------------------------
+
+
+class LexCommandMode(str, Enum):
+    """Where a command result came from. Never conflate the two."""
+
+    live = "live"  # a real AWS Lex V2 response
+    simulated = "simulated"  # a clearly labelled local mock response
+    disabled = "disabled"  # no provider available
+
+
+class LexCommandRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=8000)
+    session_id: str | None = Field(default=None, max_length=128)
+    confirmed: bool = False
+
+    @field_validator("text")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("text must not be blank")
+        return stripped
+
+
+class LexCommandResponse(BaseModel):
+    id: str
+    timestamp: str = Field(default_factory=_now_iso)
+    transcript: str
+    intent: str
+    slots: dict[str, str] = Field(default_factory=dict)
+    fulfillment_message: str
+    mode: LexCommandMode
+    provider: str
+    session_id: str
+    latency_ms: int
+    warnings: list[str] = Field(default_factory=list)
+
+
+class LexStatusResponse(BaseModel):
+    enabled: bool
+    configured: bool
+    available: bool
+    mode: LexCommandMode
+    provider: str
+    detail: str
+    setup_hint: str | None = None
+
+
 # --- Transcriptions (server-side, optional) -------------------------------
 
 

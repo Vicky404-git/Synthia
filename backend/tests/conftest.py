@@ -20,6 +20,7 @@ os.environ.setdefault("APP_ENV", "test")
 def _reset_caches() -> None:
     from app.auth import reset_rate_limiter
     from app.config import get_settings
+    from app.lex import reset_lex_provider
     from app.providers.registry import reset_provider_registry
     from app.store import reset_transcription_store
     from app.tools.registry import reset_tool_registry
@@ -29,6 +30,7 @@ def _reset_caches() -> None:
     reset_tool_registry()
     reset_rate_limiter()
     reset_transcription_store()
+    reset_lex_provider()
 
 
 @pytest.fixture

@@ -2,6 +2,8 @@ import type {
   ApiErrorBody,
   ChatResponse,
   HealthResponse,
+  LexCommandResponse,
+  LexStatusResponse,
   Mode,
   ProviderListResponse,
   ReadyResponse,
@@ -129,6 +131,12 @@ export const api = {
     request<ToolExecuteResponse>("/api/tools/execute", {
       method: "POST",
       body: JSON.stringify({ name, arguments: args, confirmed }),
+    }),
+  lexStatus: () => request<LexStatusResponse>("/api/lex/status"),
+  lexCommand: (text: string, sessionId: string, confirmed = false) =>
+    request<LexCommandResponse>("/api/lex/command", {
+      method: "POST",
+      body: JSON.stringify({ text, session_id: sessionId, confirmed }),
     }),
 };
 

@@ -83,6 +83,7 @@ flowchart LR
     FE -->|transcript review| FE
     FE -->|history| LS[(Browser localStorage)]
     FE -->|POST /api/chat| API[FastAPI backend]
+    FE -->|POST /api/lex/command| API
 
     API --> INT[Intent interpreter]
     INT -->|LLM configured| LLM[Hosted LLM API]
@@ -99,6 +100,9 @@ flowchart LR
     DOC --> DD[(Local Docker daemon)]
 
     API -->|STT| STT[Faster-Whisper - local CPU, or hosted Whisper]
+    API --> CMD[Replaceable command provider]
+    CMD -->|configured| LEX[AWS Lex V2 Runtime - boto3]
+    CMD -->|default| SIM[Simulated provider - labelled]
     API --> RESULT[Structured result]
     RESULT --> FE
 ```
@@ -118,6 +122,9 @@ Request flow:
 - Transcription History: search, filters, detail, copy, retry, edit+resubmit,
   clear, empty state.
 - Cloud provider status and a live tool runner.
+- **Voice Commands** page: a replaceable intent recogniser (AWS Lex V2 or a
+  labelled simulated provider) with transcript, intent, slots, latency, and a
+  clear live-vs-simulated distinction.
 - Optional **"Synthia" wake word** (off by default) that arms the recorder.
 - Settings: language, recogniser, wake word, privacy, demo indicator.
 - Mobile bottom navigation and responsive layout.
@@ -128,6 +135,7 @@ Request flow:
 - General assistant API and streaming endpoint.
 - Optional server-side STT endpoint.
 - Replaceable LLM provider integration.
+- Optional, replaceable voice-command provider (AWS Lex V2 or simulated).
 - Intent interpretation and validated tool routing.
 - Provider adapters and a permission-aware tool registry.
 - Authentication for sensitive endpoints, rate limiting, structured errors.
@@ -223,14 +231,76 @@ out-of-scope operations. Handlers are the only code that runs.
 | **Azure** | Interface + config only | Reported honestly as planned/unconfigured. No live operations. |
 | **Demo** | Implemented & verified | Labelled sample data; never a real mutation. |
 
-## 11. Docker packaging
+## 11. Optional voice-command mode (AWS Lex V2, replaceable)
+
+Synthia can recognise the **intent** and **slots** of a voice command (for
+example `DeviceControlIntent` with `Action=turn_on`, `Device=fan`,
+`Room=bedroom`). This is optional and independent of the assistant and STT
+flows: with no configuration the app still works.
+
+- **Replaceable contract.** The backend depends only on a small `LexProvider`
+  interface (`recognize_text`, optional `recognize_utterance`, `health`), the
+  same way STT and the LLM are abstracted. AWS Lex is one implementation; a
+  local rule-based provider (the default) is another.
+- **AWS Lex V2 adapter (boto3).** Configured with `LEX_ENABLED=true`,
+  `LEX_BOT_ID`, `LEX_BOT_ALIAS_ID` (default `TSTALIASID`), `LEX_LOCALE_ID`, and
+  `AWS_DEFAULT_REGION`. Credentials come from the standard AWS chain (IAM role,
+  shared config, or environment) — never hardcoded or logged. It calls
+  `RecognizeText`; `RecognizeUtterance` is used only when
+  `LEX_USE_RECOGNIZE_UTTERANCE=true`, because that path requires **raw 16 kHz
+  mono PCM** (a WAV header is stripped automatically). Arbitrary browser audio
+  formats are **not** assumed to work.
+- **You do not duplicate Lambda fulfilment.** Synthia never reimplements the
+  bot's fulfilment logic. Configure a **Lambda code hook** on the Lex bot
+  yourself; Synthia only parses the stable fields it needs. The AWS bot, alias,
+  and Lambda are **not created or verified by this project**.
+- **The portable path is STT → `RecognizeText`.** Audio capture and
+  speech-to-text stay separate: the frontend transcribes with the configured
+  STT provider and sends the resulting **transcript** to Lex. This is also the
+  path to a future custom intent recogniser.
+- **Status is honest.** The Commands page shows whether the provider is
+  **live**, **simulated**, or **disabled**, with the reason and a setup hint.
+  `/ready` reports `lex` alongside `llm` and `stt`.
+
+### Safety
+
+- **Untrusted input.** Lex intents and slots are validated against explicit
+  allowlists. Unknown intents collapse to `FallbackIntent`; unknown slots are
+  dropped; slot values are bounded. A misconfigured bot cannot inject arbitrary
+  keys or values.
+- **Distinct sessions.** Every caller supplies (or is issued) its own session
+  id; there is no shared hardcoded session.
+- **No hidden actions.** The recogniser returns intent, slots, and a message —
+  it does **not** execute infrastructure operations and cannot bypass the
+  validated tool router, auth, or confirmation controls.
+- **Live vs simulated is explicit.** Simulated results are labelled
+  `DEMO DATA` in the API and the UI; they are never presented as live AWS
+  responses. No raw audio, transcripts beyond the response, or credentials are
+  logged.
+
+### Replacement path (no model training)
+
+The recognition stack is swappable piece by piece, each behind the same
+contract:
+
+1. **Speech** — a custom STT implements the existing STT contract and returns a
+   transcript.
+2. **Intent** — the transcript goes to AWS Lex `RecognizeText` now; a custom
+   intent recogniser can later replace Lex behind the same app-level contract.
+3. **Fulfilment / TTS** — a custom fulfilment function (or Polly alternative)
+   can replace the Lex Lambda independently.
+
+Building a flow around an existing model or service is **not** the same as
+training one, and Synthia does not claim to train models.
+
+## 12. Docker packaging
 
 - `backend/Dockerfile` — Python 3.13 slim, non-root, binds `0.0.0.0`, honours
   `$PORT`, includes a healthcheck.
 - `frontend/Dockerfile` — multi-stage Node build → nginx, with SPA fallback.
 - `compose.yaml` — runs both with `docker compose up --build`.
 
-## 12. Deployment architecture
+## 13. Deployment architecture
 
 ```mermaid
 flowchart LR
@@ -249,7 +319,7 @@ flowchart LR
 > Free hosting may sleep, restart, or rate-limit. Do not assume always-on or
 > unlimited free infrastructure.
 
-## 13. Security & limitations
+## 14. Security & limitations
 
 **Implemented**
 
@@ -273,6 +343,7 @@ flowchart LR
 | Browser speech recognition | Implemented | A supported browser + HTTPS |
 | Hosted STT | Implemented | `STT_PROVIDER=openai` + key |
 | AWS read-only ops | Mocks + unit tests | AWS credentials (read-only) |
+| Lex voice commands | Simulated provider verified; AWS adapter mocked (no real AWS) | A Lex V2 bot + alias + Lambda, AWS credentials, `LEX_*` config |
 | Docker read-only ops | Mocks + unit tests | Local Docker daemon |
 | Azure | Interface only | Not implemented |
 
@@ -286,7 +357,7 @@ flowchart LR
 - Browser speech recognition behaviour varies across browsers and is not
   promised to work identically on all mobile browsers.
 
-## 14. Installation & local execution
+## 15. Installation & local execution
 
 ### Backend
 
@@ -363,7 +434,7 @@ A public Vercel site does **not** automatically get your laptop's local model �
 point `VITE_API_BASE_URL` at a backend that has Faster-Whisper installed, and
 note that free hosts may not have the CPU/RAM or persistent disk for it.
 
-## 15. Environment variables
+## 16. Environment variables
 
 See `.env.example` (backend) and `frontend/.env.example`. Key variables:
 
@@ -379,6 +450,8 @@ See `.env.example` (backend) and `frontend/.env.example`. Key variables:
 | `STT_MODEL`, `STT_BASE_URL`, `STT_API_KEY` | STT model / hosted endpoint / key |
 | `STT_DEVICE`, `STT_COMPUTE_TYPE`, `STT_CACHE_DIR` | Local Faster-Whisper (CPU/INT8 default) |
 | `AWS_ENABLED`, `AWS_DEFAULT_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | AWS |
+| `LEX_ENABLED`, `LEX_BOT_ID`, `LEX_BOT_ALIAS_ID`, `LEX_LOCALE_ID` | Optional AWS Lex V2 command recognition |
+| `LEX_USE_RECOGNIZE_UTTERANCE`, `LEX_SESSION_ID_PREFIX` | Lex audio path / session id prefix |
 | `DOCKER_ENABLED`, `DOCKER_SOCKET` | Local Docker |
 | `AZURE_ENABLED`, `AZURE_SUBSCRIPTION_ID` | Azure (planned) |
 | `VITE_API_BASE_URL`, `VITE_STT_PROVIDER` | Frontend build-time |
@@ -389,12 +462,18 @@ the JavaScript.
 
 Never commit a real `.env`, key, or token.
 
-## 16. Cloud provider configuration
+## 17. Cloud provider configuration
 
 **AWS (read-only).** Enable with `AWS_ENABLED=true` and `AWS_DEFAULT_REGION`.
 Provide credentials via the standard boto3 chain (IAM role preferred, or
 environment variables). Minimal policy:
 `ec2:DescribeInstances`, `s3:ListAllMyBuckets`.
+
+**AWS Lex V2 (optional voice commands).** Enable with `LEX_ENABLED=true`,
+`LEX_BOT_ID`, `LEX_BOT_ALIAS_ID`, and `LEX_LOCALE_ID`. Create and alias the bot
+and attach its Lambda code hook yourself. Minimal policy for the text path:
+`lex:RecognizeText` (add `lex:RecognizeUtterance` only if you enable the audio
+path). If unset, the Commands page uses the labelled simulated provider.
 
 **Docker (local demo).** Enable with `DOCKER_ENABLED=true` on a trusted machine
 where the socket is reachable. It is forced off in production.
@@ -402,7 +481,7 @@ where the socket is reachable. It is forced off in production.
 **Azure.** Interface and configuration model only. It is reported as
 unconfigured/planned; no live operation is implemented or verified.
 
-## 17. Testing
+## 18. Testing
 
 ```bash
 # Backend (mocks; no paid resources)
@@ -422,25 +501,32 @@ cd backend && python debug.py --json   # machine-readable
 required check fails. It is the fastest way to confirm a fresh checkout or deploy
 is configured correctly.
 
-The backend suite (78 tests) covers health/readiness, validation, assistant
+The backend suite (99 tests) covers health/readiness, validation, assistant
 routing, tool routing, unknown tools, invalid arguments, missing credentials,
 provider errors, AWS/Docker adapters (mocked), transcription event creation and
 distinct failure statuses, confirmation requirements for mutating operations,
 and the local Faster-Whisper provider (selection, success + language, empty /
 oversized audio, load and inference errors, timeouts, caching, and that the
-hosted provider still works — all with the model mocked). Frontend tests cover
-history persistence/filtering, status mapping, STT provider selection,
-transcript/error rendering, and wake-word phrase matching plus the wake
-lifecycle (opt-in, unsupported browser, detection, no duplicate sessions,
-permission denial, and mic release while recording).
+hosted provider still works — all with the model mocked). It also covers the
+optional Lex command path entirely with mocks and **no real AWS credentials**:
+request construction, response parsing, intent/slot allowlist validation,
+missing configuration, AWS error mapping, WAV-header stripping and content-type
+sanitising, distinct session ids, the simulated provider, and the FastAPI routes
+(`/api/lex/status`, `/api/lex/command`, `/api/lex/voice`) including provider
+fallback and readiness reporting. Frontend tests cover history
+persistence/filtering, status mapping, STT provider selection, transcript/error
+rendering, the Commands page (simulated status, send, result rendering), and
+wake-word phrase matching plus the wake lifecycle (opt-in, unsupported browser,
+detection, no duplicate sessions, permission denial, and mic release while
+recording).
 
-## 18. Public demo URL
+## 19. Public demo URL
 
 > **Placeholder:** `https://synthia-demo.example.com`
 > Replace with your Vercel URL after deployment. The backend runs on Render (or
 > another Docker host); set `VITE_API_BASE_URL` to that URL at build time.
 
-## 19. Future scope
+## 20. Future scope
 
 - Additional providers and Kubernetes: GCP, Kubernetes, monitoring/deployment
   platforms, using the existing adapter interface.
@@ -464,9 +550,12 @@ backend CPU with no external API.
 
 ### Final status snapshot
 
-- Backend: **78/78 tests pass**; runs locally and in Docker. `debug.py` reports
+- Backend: **99/99 tests pass**; runs locally and in Docker. `debug.py` reports
   all env vars/integrations and exits non-zero on misconfiguration.
-- Frontend: **typechecks, 24/24 tests pass, production build succeeds**.
+- Frontend: **typechecks, 26/26 tests pass, production build succeeds**.
+- Optional AWS Lex V2 command mode is implemented behind a replaceable provider
+  and verified with mocked tests only — no AWS bot, alias, or Lambda is created
+  or verified, and live use requires your own credentials and resources.
 - Local Faster-Whisper STT verified end-to-end on CPU/INT8, including
   browser-recorded WebM, with the Docker image building correctly.
 - Live cloud calls require credentials; demo mode works without any.
