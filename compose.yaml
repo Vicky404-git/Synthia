@@ -1,4 +1,31 @@
 services:
+  dockerproxy:
+    image: tecnativa/docker-socket-proxy
+    environment:
+      CONTAINERS: "1"
+      POST: "1"
+      BUILD: "0"
+      NETWORKS: "0"
+      VOLUMES: "0"
+      IMAGES: "0"
+      EXEC: "0"
+      SWARM: "0"
+      SERVICES: "0"
+      TASKS: "0"
+      NODES: "0"
+      SECRETS: "0"
+      CONFIGS: "0"
+      PLUGINS: "0"
+      INFO: "0"
+      VERSION: "1"
+      PING: "1"
+      AUTH: "0"
+      SESSION: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    privileged: false
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -33,6 +60,7 @@ services:
       LEX_LOCALE_ID: "${LEX_LOCALE_ID:-en_US}"
       LEX_USE_RECOGNIZE_UTTERANCE: "${LEX_USE_RECOGNIZE_UTTERANCE:-false}"
       DOCKER_ENABLED: "false"
+      DOCKER_SOCKET: "http://dockerproxy:2375"
       AZURE_ENABLED: "${AZURE_ENABLED:-false}"
     ports:
       - "8000:8000"
@@ -40,6 +68,8 @@ services:
       # Persist the downloaded Whisper model across container rebuilds. It lives
       # in a named volume, never in the Git repository.
       - synthia-models:/home/synthia/.cache/synthia
+    depends_on:
+      - dockerproxy
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -fsS http://127.0.0.1:8000/health"]
       interval: 30s

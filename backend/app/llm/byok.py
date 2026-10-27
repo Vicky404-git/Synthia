@@ -21,6 +21,7 @@ imported from the package ``__init__`` without a cycle.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -36,6 +37,7 @@ from .providers import (
     supported_provider_ids,
 )
 
+logger = logging.getLogger(__name__)
 HEADER_PROVIDER = "X-Synthia-LLM-Provider"
 HEADER_MODEL = "X-Synthia-LLM-Model"
 HEADER_API_KEY = "X-Synthia-LLM-API-Key"
@@ -62,16 +64,23 @@ def _header_values(headers: Any, name: str) -> list[str]:
     """
     if headers is None:
         return []
-    if hasattr(headers, "getlist"):
-        return list(headers.getlist(name))
+    try:
+        # Avoid logging raw header contents
+        if hasattr(headers, "getlist"):
+            return list(headers.getlist(name))
+    except Exception:
+        pass
     lowered = name.lower()
     values: list[str] = []
-    for key, value in dict(headers).items():
-        if str(key).lower() == lowered:
-            if isinstance(value, (list, tuple)):
-                values.extend(str(item) for item in value)
-            else:
-                values.append(str(value))
+    try:
+        for key, value in dict(headers).items():
+            if str(key).lower() == lowered:
+                if isinstance(value, (list, tuple)):
+                    values.extend(str(item) for item in value)
+                else:
+                    values.append(str(value))
+    except Exception:
+        pass
     return values
 
 

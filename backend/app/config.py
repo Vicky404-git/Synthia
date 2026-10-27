@@ -11,7 +11,7 @@ import json
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -42,7 +42,7 @@ class Settings(BaseSettings):
             "http://127.0.0.1:5173",
         ]
     )
-    api_auth_token: str | None = None
+    api_auth_token: SecretStr | None = None
     demo_mode: bool = True
     allow_mutating: bool = False
     rate_limit_per_minute: int = Field(default=60, ge=0)
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
 
     # --- LLM ---
     llm_provider: str = "demo"  # demo | openai
-    llm_api_key: str | None = None
+    llm_api_key: SecretStr | None = None
     llm_model: str = "gpt-4o-mini"
     llm_base_url: str = "https://api.openai.com/v1"
     llm_timeout_seconds: float = Field(default=45.0, gt=0)
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     # "none" = disabled, "faster-whisper" = local CPU inference (default),
     # "openai" = hosted OpenAI-compatible Whisper endpoint.
     stt_provider: str = "faster-whisper"
-    stt_api_key: str | None = None
+    stt_api_key: SecretStr | None = None
     # Model name for the selected provider: a local size (tiny|base|small|
     # medium|large-v3) for faster-whisper, or a hosted name (whisper-1).
     stt_model: str = "base"

@@ -295,6 +295,32 @@ export function useWakeWord({
           /* ignore */
         }
       }
+      // Best-effort cleanup for any audio resources that may be held
+      try {
+        const maybeStream = (recognition as any)?.stream;
+        if (maybeStream && typeof maybeStream.getTracks === "function") {
+          maybeStream.getTracks().forEach((track: MediaStreamTrack) => {
+            try {
+              track.stop();
+            } catch {
+              /* ignore */
+            }
+          });
+        }
+      } catch {
+        /* ignore */
+      }
+      try {
+        const maybeCtx = (recognition as any)?.audioContext as AudioContext | undefined;
+        if (maybeCtx && typeof maybeCtx.close === "function") {
+          const closePromise = maybeCtx.close();
+          if (closePromise && typeof (closePromise as any).catch === "function") {
+            (closePromise as any).catch(() => {});
+          }
+        }
+      } catch {
+        /* ignore */
+      }
     };
   }, [enabled, paused, supported, ctor, language, phrase]);
 

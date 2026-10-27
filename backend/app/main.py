@@ -27,6 +27,47 @@ logging.basicConfig(
 logger = logging.getLogger("synthia")
 
 
+class _HeaderScrubbingFilter(logging.Filter):
+    _SENSITIVE = {"authorization", "x-api-key", "x-synthia-llm-api-key", "api-key", "apikey"}
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            if isinstance(record.msg, str):
+                msg = record.msg
+                for key in self._SENSITIVE:
+                    # crude but effective for header dumps
+                    if key in msg.lower():
+                        record.msg = self._scrub(msg)
+                        break
+            if record.args:
+                args = list(record.args)
+                for i, arg in enumerate(args):
+                    if isinstance(arg, str):
+                        low = arg.lower()
+                        if any(k in low for k in self._SENSITIVE):
+                            args[i] = self._scrub(arg)
+                record.args = tuple(args)
+        except Exception:
+            pass
+        return True
+
+    @staticmethod
+    def _scrub(text: str) -> str:
+        import re
+
+        # Authorization: Bearer ...
+        text = re.sub(r"(?i)(authorization\s*:\s*bearer\s+)[^\s]+", r"\1[REDACTED]", text)
+        # Generic header values
+        for h in ["x-api-key", "x-synthia-llm-api-key", "api-key", "apikey"]:
+            text = re.sub(rf"(?i)({re.escape(h)}\s*[:=]\s*)[^\s,&]+", r"\1[REDACTED]", text)
+        return text
+
+
+for _h in logging.root.handlers:
+    _h.addFilter(_HeaderScrubbingFilter())
+logger.addFilter(_HeaderScrubbingFilter())
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = get_settings()

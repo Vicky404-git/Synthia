@@ -66,6 +66,28 @@ async def execute_decision(
 
     _check_permissions(tool.read_only, settings, confirmed)
 
+    # Human-in-the-Loop gate: do not execute cloud/provider tools directly;
+    # return a pending approval payload for the UI to confirm.
+    arguments = parsed.model_dump(exclude_none=True)
+    if decision.operation == OperationClass.mutating or not tool.read_only or tool.provider != "demo":
+        return ExecutionOutcome(
+            operation=decision.operation,
+            reply=(
+                "Tool execution requires human approval.\n\n"
+                + _format_pending(tool.name, tool.provider, arguments)
+            ),
+            tool_call=ToolCall(
+                name=tool.name,
+                provider=tool.provider,
+                read_only=tool.read_only,
+                arguments=arguments,
+                result={"status": "pending_approval", "tool": tool.name, "arguments": arguments},
+                requires_confirmation=True,
+                simulated=False,
+            ),
+            warnings=warnings,
+        )
+
     result = await run_in_threadpool(tool.handler, parsed)
 
     arguments = parsed.model_dump(exclude_none=True)
@@ -110,6 +132,8 @@ def _summarise(
 ) -> str:
     prefix = "DEMO — " if simulated else ""
     lines = [f"{prefix}{message}".strip()]
+    if isinstance(data, dict) and data.get("status") == "pending_approval":
+        return "\n".join(lines)
     if "instances" in data and isinstance(data["instances"], list):
         for item in data["instances"][:10]:
             lines.append(
@@ -130,3 +154,10 @@ def _summarise(
         lines.append("```")
     lines.append(f"[tool: {tool_name}]")
     return "\n".join(lines)
+
+
+def _format_pending(tool_name: str, provider: str, arguments: dict[str, Any]) -> str:
+    import json
+
+    payload = {"status": "pending_approval", "tool": tool_name, "arguments": arguments}
+    return json.dumps(payload)
