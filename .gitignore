@@ -9,7 +9,7 @@ credentials*
 aws_credentials*
 secrets/
 .aws/
-
+*.zip
 # --- Python ---
 __pycache__/
 *.py[oc]
